@@ -2,3 +2,6 @@
 docs/superpowers/
 
 .DS_Store
+
+# Agent workspaces
+.superpowers/
