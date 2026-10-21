@@ -102,11 +102,30 @@ impl EngineState {
         }
     }
 
-    /// Spawns the sidecar (or applies the debug-only dev bypass).
-    pub fn start(&self, app: &AppHandle) -> Result<(), String> {
+    /// Kills any running engine, bumps the generation, and resets to Starting.
+    fn begin(&self) -> u64 {
         self.kill();
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         self.status.send_replace(Status::Starting);
+        generation
+    }
+
+    /// Records a startup failure so waiters get the real cause immediately.
+    fn fail_start(&self, generation: u64, msg: String) {
+        eprintln!("[engine] failed to start: {msg}");
+        self.set_if_current(generation, Status::Failed(msg));
+    }
+
+    /// Starts the engine. Never fails: errors become `Status::Failed`.
+    pub fn start(&self, app: &AppHandle) {
+        let generation = self.begin();
+        if let Err(msg) = self.try_start(app, generation) {
+            self.fail_start(generation, msg);
+        }
+    }
+
+    /// Spawns the sidecar (or applies the debug-only dev bypass).
+    fn try_start(&self, app: &AppHandle, generation: u64) -> Result<(), String> {
 
         #[cfg(debug_assertions)]
         if let (Ok(port), Ok(token)) = (
@@ -183,7 +202,8 @@ pub async fn engine_info(state: State<'_, EngineState>) -> Result<EngineInfo, St
 
 #[tauri::command]
 pub async fn restart_engine(app: AppHandle, state: State<'_, EngineState>) -> Result<(), String> {
-    state.start(&app)
+    state.start(&app);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -233,5 +253,16 @@ mod tests {
         let sent = info.clone();
         tokio::spawn(async move { tx.send_replace(Status::Ready(sent)) });
         assert_eq!(wait_ready(rx, Duration::from_secs(2)).await, Ok(info));
+    }
+
+    #[tokio::test]
+    async fn start_failure_is_reported_immediately() {
+        let state = EngineState::default();
+        let generation = state.begin();
+        state.fail_start(generation, "no sidecar".to_string());
+        let started = std::time::Instant::now();
+        let err = state.info(Duration::from_secs(5)).await.unwrap_err();
+        assert_eq!(err, "no sidecar");
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
 }

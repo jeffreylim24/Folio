@@ -10,7 +10,7 @@ pub fn run() {
         .manage(engine::EngineState::default())
         .setup(|app| {
             let handle = app.handle().clone();
-            handle.state::<engine::EngineState>().start(&handle)?;
+            handle.state::<engine::EngineState>().start(&handle);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![engine::engine_info, engine::restart_engine])
