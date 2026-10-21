@@ -3,7 +3,9 @@ import json
 import httpx
 import respx
 from fastapi.testclient import TestClient
+from keyring.errors import KeyringError
 
+from folio_engine.config import Settings
 from folio_engine.hardware import HardwareInfo
 from folio_engine.secrets import SecretStore
 from folio_engine.server import create_app
@@ -252,3 +254,118 @@ def test_validation_error_does_not_echo_request_body(tmp_path):
     assert r.status_code == 422
     assert "sk-LEAK" not in r.text
     assert r.json() == {"kind": "other", "message": "Invalid request."}
+
+
+# --- keychain failures ----------------------------------------------------
+
+
+class FailingBackend:
+    """A keychain that refuses every operation (e.g. access denied)."""
+
+    def set_password(self, s, u, p):
+        raise KeyringError("denied")
+
+    def get_password(self, s, u):
+        raise KeyringError("denied")
+
+    def delete_password(self, s, u):
+        raise KeyringError("denied")
+
+
+def failing_client(tmp_path):
+    app = create_app(
+        "secret",
+        tmp_path,
+        secrets=SecretStore(FailingBackend()),
+        ollama_client=FakeOllama(["0.9"]),
+    )
+    return TestClient(app), app
+
+
+@respx.mock
+def test_api_provider_keychain_failure_is_400(tmp_path):
+    respx.get(OPENAI_MODELS).mock(
+        return_value=httpx.Response(200, json={"data": [{"id": "gpt-x"}]})
+    )
+    client, app = failing_client(tmp_path)
+    r = connect(client)
+    assert r.status_code == 400
+    assert r.json() == {
+        "kind": "other",
+        "message": "Folio couldn't save your key to the system keychain. "
+        "Check that you allowed access, then try again.",
+    }
+    assert app.state.config.load().provider is None
+
+
+def test_state_keychain_failure_means_no_key(tmp_path):
+    client, app = failing_client(tmp_path)
+    app.state.config.save(Settings(provider="openai", model="gpt-x"))
+    r = client.get("/setup/state", headers=AUTH)
+    assert r.status_code == 200
+    assert r.json()["has_api_key"] is False
+
+
+def test_test_keychain_failure_is_400(tmp_path):
+    client, app = failing_client(tmp_path)
+    app.state.config.save(Settings(provider="openai", model="gpt-x"))
+    r = client.post("/setup/test", headers=AUTH)
+    assert r.status_code == 400
+    body = r.json()
+    assert body["kind"] == "other"
+    assert "keychain" in body["message"] and "denied" not in body["message"]
+    assert app.state.config.load().setup_complete is False
+
+
+# --- saving the "run privately" choice ------------------------------------
+
+
+def test_put_provider_ollama_saves_choice(tmp_path):
+    client, _, app = api_client(tmp_path)
+    app.state.config.save(
+        Settings(provider="openai", model="gpt-x", setup_complete=True)
+    )
+    r = client.put("/setup/provider", headers=AUTH, json={"provider": "ollama"})
+    assert r.status_code == 200
+    s = app.state.config.load()
+    assert (s.provider, s.model, s.base_url, s.setup_complete) == (
+        "ollama",
+        None,
+        None,
+        False,
+    )
+    body = client.get("/setup/state", headers=AUTH).json()
+    assert body["settings"]["provider"] == "ollama"
+
+
+def test_put_provider_ollama_keeps_chosen_ollama_model(tmp_path):
+    client, _, app = api_client(tmp_path)
+    app.state.config.save(Settings(provider="ollama", model="qwen3:8b"))
+    client.put("/setup/provider", headers=AUTH, json={"provider": "ollama"})
+    assert app.state.config.load().model == "qwen3:8b"
+
+
+def test_put_provider_rejects_api_providers_and_needs_token(tmp_path):
+    client, _, _ = api_client(tmp_path)
+    r = client.put("/setup/provider", headers=AUTH, json={"provider": "openai"})
+    assert r.status_code == 422
+    r = client.put("/setup/provider", json={"provider": "ollama"})
+    assert r.status_code == 401
+
+
+@respx.mock
+def test_empty_reply_does_not_complete_setup(tmp_path):
+    respx.get(OPENAI_MODELS).mock(
+        return_value=httpx.Response(200, json={"data": [{"id": "gpt-x"}]})
+    )
+    respx.post(OPENAI_CHAT).mock(
+        return_value=httpx.Response(
+            200, json={"choices": [{"message": {"content": None}}]}
+        )
+    )
+    client, _, app = api_client(tmp_path)
+    connect(client)
+    client.put("/setup/api-model", headers=AUTH, json={"model": "gpt-x"})
+    r = client.post("/setup/test", headers=AUTH)
+    assert r.status_code == 400 and r.json()["kind"] == "other"
+    assert app.state.config.load().setup_complete is False

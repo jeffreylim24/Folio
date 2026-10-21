@@ -1,8 +1,9 @@
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from keyring.errors import KeyringError
 from pydantic import BaseModel
 
 from ..auth import require_token
@@ -13,6 +14,15 @@ from ..ollama.detect import find_ollama, start_ollama
 from ..providers import ProviderError, make_provider
 
 router = APIRouter(prefix="/setup", dependencies=[Depends(require_token)])
+
+MSG_KEYCHAIN_SAVE = (
+    "Folio couldn't save your key to the system keychain. "
+    "Check that you allowed access, then try again."
+)
+MSG_KEYCHAIN_READ = (
+    "Folio couldn't read your key from the system keychain. "
+    "Check that you allowed access, then try again."
+)
 
 
 @router.get("/hardware")
@@ -56,6 +66,22 @@ def post_ollama_install(request: Request) -> dict[str, bool]:
 @router.get("/ollama/install")
 def get_ollama_install(request: Request) -> dict[str, Any]:
     return asdict(_installer(request).status())
+
+
+class ProviderChoice(BaseModel):
+    # API providers are saved by POST /setup/api-provider once the key works.
+    provider: Literal["ollama"]
+
+
+@router.put("/provider")
+def put_provider(choice: ProviderChoice, request: Request) -> dict[str, bool]:
+    """Save "run privately" as soon as it is picked, so a relaunch (e.g. after
+    installing Ollama) continues from there."""
+    config = request.app.state.config
+    current = config.load()
+    model = current.model if current.provider == "ollama" else None
+    config.save(Settings(provider=choice.provider, model=model))
+    return {"ok": True}
 
 
 class ModelChoice(BaseModel):
@@ -136,7 +162,10 @@ def post_api_provider(choice: ApiProviderChoice, request: Request):
         models = provider.list_models()
     except ProviderError as exc:
         return _provider_error(exc)
-    state.secrets.set_api_key(choice.provider, choice.api_key)
+    try:
+        state.secrets.set_api_key(choice.provider, choice.api_key)
+    except KeyringError:
+        return _provider_error(ProviderError("other", MSG_KEYCHAIN_SAVE))
     state.config.save(settings)
     return {"models": models}
 
@@ -179,6 +208,8 @@ def post_test(request: Request):
         )
     except ProviderError as exc:
         return _provider_error(exc)
+    except KeyringError:
+        return _provider_error(ProviderError("other", MSG_KEYCHAIN_READ))
     settings.setup_complete = True
     state.config.save(settings)
     return {"reply": reply}
@@ -188,11 +219,14 @@ def post_test(request: Request):
 def get_state(request: Request) -> dict[str, Any]:
     state = request.app.state
     settings = state.config.load()
-    has_key = bool(
-        settings.provider
-        and settings.provider != "ollama"
-        and state.secrets.get_api_key(settings.provider)
-    )
+    try:
+        has_key = bool(
+            settings.provider
+            and settings.provider != "ollama"
+            and state.secrets.get_api_key(settings.provider)
+        )
+    except KeyringError:
+        has_key = False  # the key flow will ask again and report the problem
     ollama = None
     if settings.provider in (None, "ollama"):
         ollama = asdict(find_ollama(state.ollama_client))
