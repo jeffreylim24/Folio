@@ -2,13 +2,15 @@ from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ..auth import require_token
 from ..catalog import MODEL_CATALOG, recommend
-from ..config import Settings
+from ..config import ProviderName, Settings
 from ..hardware import ollama_models_dir
 from ..ollama.detect import find_ollama, start_ollama
+from ..providers import ProviderError, make_provider
 
 router = APIRouter(prefix="/setup", dependencies=[Depends(require_token)])
 
@@ -94,3 +96,99 @@ def post_pull_retry(request: Request) -> dict[str, bool]:
     size = next((m.size_gb for m in MODEL_CATALOG if m.name == model), None)
     request.app.state.pull_manager.start(model, size)
     return {"started": True}
+
+
+def _provider_error(exc: ProviderError) -> JSONResponse:
+    return JSONResponse(
+        status_code=400, content={"kind": exc.kind, "message": exc.message}
+    )
+
+
+class ApiProviderChoice(BaseModel):
+    provider: ProviderName
+    api_key: str
+    base_url: str | None = None
+
+
+@router.post("/api-provider")
+def post_api_provider(choice: ApiProviderChoice, request: Request):
+    if choice.provider == "ollama":
+        raise HTTPException(400, "Ollama doesn't use an API key.")
+    base_url = None
+    if choice.provider == "openai_compatible":
+        base_url = (choice.base_url or "").strip() or None
+        if base_url is None:
+            raise HTTPException(400, "A base URL is required for this provider.")
+    state = request.app.state
+    settings = Settings(provider=choice.provider, base_url=base_url)
+    try:
+        provider = make_provider(settings, state.secrets, api_key=choice.api_key)
+        models = provider.list_models()
+    except ProviderError as exc:
+        return _provider_error(exc)
+    state.secrets.set_api_key(choice.provider, choice.api_key)
+    state.config.save(settings)
+    return {"models": models}
+
+
+class ApiModelChoice(BaseModel):
+    model: str
+
+
+@router.put("/api-model")
+def put_api_model(choice: ApiModelChoice, request: Request) -> dict[str, bool]:
+    config = request.app.state.config
+    current = config.load()
+    if current.provider is None or current.provider == "ollama":
+        raise HTTPException(400, "Choose an API provider first.")
+    config.save(
+        Settings(
+            provider=current.provider,
+            model=choice.model,
+            base_url=current.base_url,
+            setup_complete=False,
+        )
+    )
+    return {"ok": True}
+
+
+@router.post("/test")
+def post_test(request: Request):
+    state = request.app.state
+    settings = state.config.load()
+    if settings.provider is None or not settings.model:
+        return _provider_error(
+            ProviderError("other", "Choose a provider and model first.")
+        )
+    try:
+        provider = make_provider(
+            settings, state.secrets, ollama_client=state.ollama_client
+        )
+        reply = provider.complete(
+            [{"role": "user", "content": "Reply with exactly one word: ready"}]
+        )
+    except ProviderError as exc:
+        return _provider_error(exc)
+    settings.setup_complete = True
+    state.config.save(settings)
+    return {"reply": reply}
+
+
+@router.get("/state")
+def get_state(request: Request) -> dict[str, Any]:
+    state = request.app.state
+    settings = state.config.load()
+    has_key = bool(
+        settings.provider
+        and settings.provider != "ollama"
+        and state.secrets.get_api_key(settings.provider)
+    )
+    ollama = None
+    if settings.provider in (None, "ollama"):
+        ollama = asdict(find_ollama(state.ollama_client))
+    return {
+        "settings": asdict(settings),
+        "has_api_key": has_key,
+        "ollama": ollama,
+        "pull": asdict(state.pull_manager.status()),
+    }

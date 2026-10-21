@@ -14,6 +14,7 @@ from .ollama.client import OllamaClient
 from .ollama.install import default_installer
 from .pull import PullManager
 from .routes import setup
+from .secrets import SecretStore
 
 ALLOWED_ORIGINS = [
     "tauri://localhost",
@@ -35,6 +36,7 @@ def create_app(token: str, data_dir: Path, **overrides: Any) -> FastAPI:
     app.state.token = token
     app.state.data_dir = data_dir
     app.state.config = ConfigStore(data_dir / "settings.json")
+    app.state.secrets = SecretStore()
     app.state.detect_hardware = detect_hardware
     app.state.ollama_client = OllamaClient()
     app.state.installer = default_installer(
