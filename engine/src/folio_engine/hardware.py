@@ -46,18 +46,23 @@ def _nvidia_vram_gb() -> float | None:
         return None
 
 
+def free_disk_gb(models_dir: Path) -> float:
+    """Free space on the volume that holds (or will hold) the models dir."""
+    disk_path = models_dir if models_dir.exists() else Path.home()
+    return round(shutil.disk_usage(disk_path).free / GB, 1)
+
+
 def detect_hardware(models_dir: Path) -> HardwareInfo:
     system = platform.system()
     os_name = {"Darwin": "macos", "Windows": "windows"}.get(system, "other")
     arch = platform.machine()
-    disk_path = models_dir if models_dir.exists() else Path.home()
     return HardwareInfo(
         os=os_name,
         arch=arch,
         total_ram_gb=round(psutil.virtual_memory().total / GB, 1),
         apple_silicon=os_name == "macos" and arch == "arm64",
         gpu_vram_gb=_nvidia_vram_gb(),
-        free_disk_gb=round(shutil.disk_usage(disk_path).free / GB, 1),
+        free_disk_gb=free_disk_gb(models_dir),
     )
 
 

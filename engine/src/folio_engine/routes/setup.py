@@ -2,9 +2,11 @@ from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 
 from ..auth import require_token
-from ..catalog import recommend
+from ..catalog import MODEL_CATALOG, recommend
+from ..config import Settings
 from ..hardware import ollama_models_dir
 from ..ollama.detect import find_ollama, start_ollama
 
@@ -47,3 +49,41 @@ def post_ollama_install(request: Request) -> dict[str, bool]:
 @router.get("/ollama/install")
 def get_ollama_install(request: Request) -> dict[str, Any]:
     return asdict(_installer(request).status())
+
+
+class ModelChoice(BaseModel):
+    model: str
+
+
+@router.put("/model", status_code=202)
+def put_model(choice: ModelChoice, request: Request) -> dict[str, bool]:
+    tier = next((m for m in MODEL_CATALOG if m.name == choice.model), None)
+    if tier is None:
+        raise HTTPException(400, "That model isn't one Folio can set up.")
+    config = request.app.state.config
+    current = config.load()
+    config.save(
+        Settings(
+            provider="ollama",
+            model=tier.name,
+            base_url=current.base_url,
+            setup_complete=current.setup_complete,
+        )
+    )
+    request.app.state.pull_manager.start(tier.name, tier.size_gb)
+    return {"started": True}
+
+
+@router.get("/pull")
+def get_pull(request: Request) -> dict[str, Any]:
+    return asdict(request.app.state.pull_manager.status())
+
+
+@router.post("/pull/retry", status_code=202)
+def post_pull_retry(request: Request) -> dict[str, bool]:
+    model = request.app.state.config.load().model
+    if not model:
+        raise HTTPException(400, "No model has been chosen yet.")
+    size = next((m.size_gb for m in MODEL_CATALOG if m.name == model), None)
+    request.app.state.pull_manager.start(model, size)
+    return {"started": True}

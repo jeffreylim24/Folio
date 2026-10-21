@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -7,9 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import __version__
 from .auth import require_token
 from .config import ConfigStore
-from .hardware import detect_hardware
+from .hardware import detect_hardware, free_disk_gb, ollama_models_dir
 from .ollama.client import OllamaClient
 from .ollama.install import default_installer
+from .pull import PullManager
 from .routes import setup
 
 ALLOWED_ORIGINS = [
@@ -19,8 +22,16 @@ ALLOWED_ORIGINS = [
 ]
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Startup must never fail because of a download.
+    with suppress(Exception):
+        app.state.pull_manager.resume_if_needed()
+    yield
+
+
 def create_app(token: str, data_dir: Path, **overrides: Any) -> FastAPI:
-    app = FastAPI(title="Folio Engine", version=__version__)
+    app = FastAPI(title="Folio Engine", version=__version__, lifespan=_lifespan)
     app.state.token = token
     app.state.data_dir = data_dir
     app.state.config = ConfigStore(data_dir / "settings.json")
@@ -31,6 +42,13 @@ def create_app(token: str, data_dir: Path, **overrides: Any) -> FastAPI:
     )
     for name, value in overrides.items():
         setattr(app.state, name, value)
+    if "pull_manager" not in overrides:
+        # Built after overrides so it uses any injected client/config.
+        app.state.pull_manager = PullManager(
+            app.state.ollama_client,
+            app.state.config,
+            lambda: free_disk_gb(ollama_models_dir()),
+        )
 
     app.add_middleware(
         CORSMiddleware,
