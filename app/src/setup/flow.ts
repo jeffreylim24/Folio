@@ -9,7 +9,7 @@ export type Step =
   | "ready"
   | "home";
 
-const API_PROVIDERS = ["anthropic", "openai", "gemini", "openai_compatible"];
+export const API_PROVIDERS: string[] = ["anthropic", "openai", "gemini", "openai_compatible"];
 
 // Settings come from a file on disk and are not type-checked by the engine,
 // so every field is checked defensively here.

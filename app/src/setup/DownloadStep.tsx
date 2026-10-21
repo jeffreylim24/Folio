@@ -13,11 +13,16 @@ function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : "Something went wrong. Please try again.";
 }
 
-export function DownloadStep({ onDone }: { onDone: () => void }) {
+type Props = { onDone: () => void; onUseApiKey: () => void };
+
+export function DownloadStep({ onDone, onUseApiKey }: Props) {
   const [pull, setPull] = useState<RawPull | null>(null);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
   const finished = useRef(false);
+  // "idle" means nothing has started the download (e.g. Ollama was not running
+  // when Folio opened). Ask the engine to start it, but only once.
+  const kicked = useRef(false);
   // Bumped by Retry so answers to earlier requests are dropped.
   const generation = useRef(0);
 
@@ -31,6 +36,10 @@ export function DownloadStep({ onDone }: { onDone: () => void }) {
       if (next.state === "done" && !finished.current) {
         finished.current = true;
         onDone();
+      }
+      if (next.state === "idle" && !kicked.current) {
+        kicked.current = true;
+        void retry();
       }
     } catch (e) {
       if (alive.current && mine === generation.current) setError(messageOf(e));
@@ -83,6 +92,9 @@ export function DownloadStep({ onDone }: { onDone: () => void }) {
       <p>
         It's safe to close Folio; the download picks up where it left off.
       </p>
+      <button type="button" onClick={onUseApiKey}>
+        Use an API key instead
+      </button>
     </section>
   );
 }

@@ -37,25 +37,101 @@ describe("SetupWizard routing", () => {
     expect(key.matches(":disabled")).toBe(false);
   });
 
-  it("goes to the Ollama step when running privately is chosen", async () => {
+  it("saves Run privately in the engine and goes to the Ollama step", async () => {
     const missing = { installed: false, running: false, version: null, app_path: null };
-    stubFetch({
-      "GET /setup/state": { body: rawState({ ollama: missing }) },
+    let provider: string | null = null;
+    const fetchMock = stubFetch({
+      "GET /setup/state": () => ({
+        body: rawState({
+          ollama: missing,
+          settings: { provider, model: null, base_url: null, setup_complete: false },
+        }),
+      }),
+      "PUT /setup/provider": () => {
+        provider = "ollama";
+        return { body: { ok: true } };
+      },
       "GET /setup/ollama": { body: missing },
     });
     wizard();
     await userEvent.click(await screen.findByRole("button", { name: /Run privately/ }));
     expect(await screen.findByRole("button", { name: "Install Ollama" })).toBeTruthy();
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(new URL(put![0]).pathname).toBe("/setup/provider");
+    expect(JSON.parse(put![1]!.body as string)).toEqual({ provider: "ollama" });
   });
 
   it("goes to the model step when Ollama is running", async () => {
+    let provider: string | null = null;
     stubFetch({
-      "GET /setup/state": { body: rawState() },
+      "GET /setup/state": () => ({
+        body: rawState({ settings: { provider, model: null, base_url: null, setup_complete: false } }),
+      }),
+      "PUT /setup/provider": () => {
+        provider = "ollama";
+        return { body: { ok: true } };
+      },
       "GET /setup/hardware": { body: { hardware: {}, recommendation: { model: null, reason: "memory", message: "Not enough memory.", est_minutes: null, free_disk_needed_gb: null } } },
     });
     wizard();
     await userEvent.click(await screen.findByRole("button", { name: /Run privately/ }));
     expect(await screen.findByText("Not enough memory.")).toBeTruthy();
+  });
+
+  it("reports an engine problem if Run privately can't be saved", async () => {
+    stubFetch({
+      "GET /setup/state": { body: rawState() },
+      "PUT /setup/provider": { status: 500, body: { detail: "Disk is read-only." } },
+    });
+    const onEngineProblem = vi.fn();
+    render(<SetupWizard onEngineProblem={onEngineProblem} />);
+    await userEvent.click(await screen.findByRole("button", { name: /Run privately/ }));
+    await waitFor(() => expect(onEngineProblem).toHaveBeenCalledWith("Disk is read-only."));
+  });
+
+  it("can leave a failing API setup for another model or another provider", async () => {
+    const apiState = rawState({
+      settings: { provider: "openai", model: "text-embedding-3-small", base_url: null, setup_complete: false },
+      has_api_key: true,
+    });
+    stubFetch({
+      "GET /setup/state": { body: apiState },
+      "POST /setup/test": { status: 400, body: { kind: "other", message: "That model can't chat." } },
+    });
+    wizard();
+    await screen.findByRole("alert");
+    await userEvent.click(screen.getByRole("button", { name: "Choose a different model" }));
+    expect(await screen.findByText(WARNING)).toBeTruthy();
+    expect(screen.getByLabelText("API key")).toBeTruthy();
+  });
+
+  it("can change how Folio's AI runs after the test fails", async () => {
+    stubFetch({
+      "GET /setup/state": {
+        body: rawState({
+          settings: { provider: "ollama", model: "qwen3:8b", base_url: null, setup_complete: false },
+          pull: { state: "done", model: "qwen3:8b", completed_bytes: 1, total_bytes: 1, error: null },
+        }),
+      },
+      "POST /setup/test": { status: 400, body: { kind: "network", message: "Couldn't reach Ollama." } },
+    });
+    wizard();
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: "Choose a different model" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Change how Folio's AI runs" }));
+    expect(await screen.findByText("How should Folio's AI run?")).toBeTruthy();
+  });
+
+  it("offers an API key instead during the download", async () => {
+    stubFetch({
+      "GET /setup/state": {
+        body: rawState({ settings: { provider: "ollama", model: "qwen3:8b", base_url: null, setup_complete: false } }),
+      },
+      "GET /setup/pull": { body: { state: "downloading", model: "qwen3:8b", completed_bytes: 1, total_bytes: 4, error: null } },
+    });
+    wizard();
+    await userEvent.click(await screen.findByRole("button", { name: "Use an API key instead" }));
+    expect(await screen.findByText(WARNING)).toBeTruthy();
   });
 
   it("resumes at the download step", async () => {

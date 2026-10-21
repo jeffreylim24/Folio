@@ -3,7 +3,15 @@ import { api } from "../engine";
 
 type Result = { status: "testing" } | { status: "ok" } | { status: "error"; message: string };
 
-export function ReadyStep({ onDone }: { onDone: () => void }) {
+type Props = {
+  onDone: () => void;
+  /** Back to picking another model; only offered for API providers. */
+  onChooseModel?: () => void;
+  /** Back to choosing between running privately and an API key. */
+  onChangeProvider: () => void;
+};
+
+export function ReadyStep({ onDone, onChooseModel, onChangeProvider }: Props) {
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<Result>({ status: "testing" });
 
@@ -42,6 +50,14 @@ export function ReadyStep({ onDone }: { onDone: () => void }) {
         </p>
         <button type="button" className="primary" onClick={() => setAttempt((n) => n + 1)}>
           Retry
+        </button>
+        {onChooseModel && (
+          <button type="button" onClick={onChooseModel}>
+            Choose a different model
+          </button>
+        )}
+        <button type="button" onClick={onChangeProvider}>
+          Change how Folio's AI runs
         </button>
       </section>
     );

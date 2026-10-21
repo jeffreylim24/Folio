@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type OllamaStatus } from "../engine";
+import { isWindows } from "../platform";
 import { usePoll } from "./usePoll";
 
 type RawStatus = { installed: boolean; running: boolean };
@@ -27,7 +28,9 @@ function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : "Something went wrong. Please try again.";
 }
 
-export function OllamaStep({ onDone }: { onDone: () => void }) {
+type Props = { onDone: () => void; onUseApiKey: () => void };
+
+export function OllamaStep({ onDone, onUseApiKey }: Props) {
   const [view, setView] = useState<View>({ kind: "checking" });
   const alive = useRef(true);
   const finished = useRef(false);
@@ -113,10 +116,14 @@ export function OllamaStep({ onDone }: { onDone: () => void }) {
       <section className="stack">
         <h1>Setting up Ollama</h1>
         <p role="alert" className="error">
-          Ollama didn't start. Try opening it from your Applications folder, then click Check again.
+          Ollama didn't start. Try opening it from{" "}
+          {isWindows() ? "the Start menu" : "your Applications folder"}, then click Check again.
         </p>
         <button type="button" className="primary" onClick={() => void check()}>
           Check again
+        </button>
+        <button type="button" onClick={onUseApiKey}>
+          Use an API key instead
         </button>
       </section>
     );
@@ -148,6 +155,9 @@ export function OllamaStep({ onDone }: { onDone: () => void }) {
       )}
       <button type="button" className="primary" onClick={() => void install()}>
         {view.kind === "install-error" ? "Retry" : "Install Ollama"}
+      </button>
+      <button type="button" onClick={onUseApiKey}>
+        Use an API key instead
       </button>
     </section>
   );

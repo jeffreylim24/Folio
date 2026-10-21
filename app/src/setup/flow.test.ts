@@ -66,4 +66,10 @@ describe("nextStep", () => {
     const s = make({ settings: { provider: "bogus" as never } });
     expect(nextStep(s)).toBe("provider");
   });
+
+  it("resumes at the Ollama step after Run privately was saved", () => {
+    // Relaunch after picking "Run privately" but before Ollama is set up.
+    const missing = { ...running, installed: false, running: false };
+    expect(nextStep(make({ settings: { provider: "ollama" }, ollama: missing }))).toBe("ollama");
+  });
 });
