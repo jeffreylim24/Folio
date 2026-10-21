@@ -30,7 +30,12 @@ def get_ollama(request: Request) -> dict[str, Any]:
 def post_ollama_start(request: Request) -> dict[str, bool]:
     client = request.app.state.ollama_client
     status = find_ollama(client)
-    return {"running": start_ollama(status, client)}
+    running = start_ollama(status, client)
+    if running:
+        # Ollama may have been down when the engine started; pick up any
+        # unfinished download now.
+        request.app.state.pull_manager.resume_in_background()
+    return {"running": running}
 
 
 def _installer(request: Request):
@@ -85,7 +90,12 @@ def put_model(choice: ModelChoice, request: Request) -> dict[str, bool]:
 
 @router.get("/pull")
 def get_pull(request: Request) -> dict[str, Any]:
-    return asdict(request.app.state.pull_manager.status())
+    return asdict(_pull_status(request.app.state.pull_manager))
+
+
+def _pull_status(pulls):
+    pulls.resume_in_background()
+    return pulls.status()
 
 
 @router.post("/pull/retry", status_code=202)
@@ -93,8 +103,8 @@ def post_pull_retry(request: Request) -> dict[str, bool]:
     model = request.app.state.config.load().model
     if not model:
         raise HTTPException(400, "No model has been chosen yet.")
-    size = next((m.size_gb for m in MODEL_CATALOG if m.name == model), None)
-    request.app.state.pull_manager.start(model, size)
+    # No full-size disk check here: part of the model may already be on disk.
+    request.app.state.pull_manager.start(model, None)
     return {"started": True}
 
 
@@ -190,5 +200,5 @@ def get_state(request: Request) -> dict[str, Any]:
         "settings": asdict(settings),
         "has_api_key": has_key,
         "ollama": ollama,
-        "pull": asdict(state.pull_manager.status()),
+        "pull": asdict(_pull_status(state.pull_manager)),
     }

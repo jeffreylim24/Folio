@@ -1,4 +1,5 @@
 import threading
+import time
 
 import httpx
 from fastapi.testclient import TestClient
@@ -184,17 +185,163 @@ def test_pull_routes_require_token(tmp_path):
     assert tc.get("/setup/pull").status_code == 401
 
 
-def test_startup_calls_resume_if_needed(tmp_path):
+def test_startup_calls_resume_in_background(tmp_path):
     class Spy:
         called = False
 
-        def resume_if_needed(self):
+        def resume_in_background(self):
             Spy.called = True
             raise RuntimeError("must not break startup")
 
     with TestClient(create_app("secret", tmp_path, pull_manager=Spy())) as tc:
         assert tc.get("/health", headers=AUTH).status_code == 200
     assert Spy.called
+
+
+class SlowListClient(FakeClient):
+    """list_models blocks until released, like an Ollama that hangs."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.release = threading.Event()
+
+    def list_models(self):
+        self.release.wait(5)
+        return super().list_models()
+
+
+def test_startup_resume_does_not_block_startup(tmp_path):
+    client = SlowListClient(events=[p("success")])
+    mgr = make(tmp_path, client, model="qwen3:8b")
+    app = create_app("secret", tmp_path, pull_manager=mgr, ollama_client=client)
+    began = time.monotonic()
+    with TestClient(app) as tc:
+        # Startup finished and serves requests while list_models is stuck.
+        assert tc.get("/health", headers=AUTH).status_code == 200
+        assert time.monotonic() - began < 2
+        client.release.set()
+        mgr.join(5)
+    assert client.pulls == ["qwen3:8b"]
+
+
+class SwitchableClient(FakeClient):
+    """Ollama that is down until `up` is set."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.up = False
+
+    def version(self):
+        return "0.9" if self.up else None
+
+    def list_models(self):
+        if not self.up:
+            raise httpx.ConnectError("down")
+        return super().list_models()
+
+
+def test_ollama_down_at_start_then_started_begins_pull(tmp_path):
+    client = SwitchableClient(events=[p("success")])
+    mgr = make(tmp_path, client, model="qwen3:8b")
+    app = create_app("secret", tmp_path, pull_manager=mgr, ollama_client=client)
+    with TestClient(app) as tc:
+        mgr.join(5)
+        assert mgr.status().state == "idle" and client.pulls == []
+        client.up = True
+        r = tc.post("/setup/ollama/start", headers=AUTH)
+        assert r.json() == {"running": True}
+        mgr.join(5)
+        assert client.pulls == ["qwen3:8b"]
+        assert tc.get("/setup/pull", headers=AUTH).json()["state"] == "done"
+
+
+def test_get_pull_resumes_idle_download_once_ollama_is_up(tmp_path):
+    client = SwitchableClient(events=[p("success")])
+    mgr = make(tmp_path, client, model="qwen3:8b")
+    tc = TestClient(
+        create_app("secret", tmp_path, pull_manager=mgr, ollama_client=client)
+    )
+    assert tc.get("/setup/pull", headers=AUTH).json()["state"] == "idle"
+    mgr.join(5)
+    assert client.pulls == []
+    client.up = True  # e.g. the user opened Ollama themselves
+    tc.get("/setup/pull", headers=AUTH)
+    mgr.join(5)
+    assert client.pulls == ["qwen3:8b"]
+
+
+def test_get_state_resumes_idle_download(tmp_path):
+    client = SwitchableClient(events=[p("success")])
+    client.up = True
+    mgr = make(tmp_path, client, model="qwen3:8b")
+    tc = TestClient(
+        create_app("secret", tmp_path, pull_manager=mgr, ollama_client=client)
+    )
+    tc.get("/setup/state", headers=AUTH)
+    mgr.join(5)
+    assert client.pulls == ["qwen3:8b"]
+
+
+def test_resume_in_background_skips_without_ollama_model(tmp_path):
+    client = FakeClient(installed=[])
+    config = ConfigStore(tmp_path / "settings.json")
+    config.save(Settings(provider="anthropic", model="x"))
+    mgr = PullManager(client, config, lambda: 100)
+    mgr.resume_in_background()
+    mgr.join(5)
+    assert client.pulls == [] and mgr.status().state == "idle"
+
+
+def test_retry_with_partial_bytes_under_low_disk_proceeds(tmp_path):
+    # 3 GB free is less than the full 9.3 GB + headroom, but most of the
+    # model is already on disk, so retry must not demand the full size again.
+    client = FakeClient([p("pulling a", "a", 100, 80), httpx.ReadError("boom")])
+    mgr = make(tmp_path, client, free=3, model="qwen3:14b")
+    tc = TestClient(
+        create_app("secret", tmp_path, pull_manager=mgr, ollama_client=client)
+    )
+    mgr.start("qwen3:14b", None)
+    mgr.join(5)
+    assert mgr.status().state == "error"
+    client.events = [p("success")]
+    assert tc.post("/setup/pull/retry", headers=AUTH).status_code == 202
+    mgr.join(5)
+    assert client.pulls == ["qwen3:14b", "qwen3:14b"]
+    assert mgr.status().state == "done"
+
+
+def test_resume_under_low_disk_proceeds(tmp_path):
+    client = FakeClient([p("success")], installed=[])
+    mgr = make(tmp_path, client, free=1, model="qwen3:14b")
+    mgr.resume_if_needed()
+    mgr.join(5)
+    assert client.pulls == ["qwen3:14b"]
+
+
+def test_put_model_still_checks_full_size(tmp_path):
+    client = FakeClient([p("success")])
+    mgr = make(tmp_path, client, free=3)
+    tc = TestClient(
+        create_app("secret", tmp_path, pull_manager=mgr, ollama_client=client)
+    )
+    tc.put("/setup/model", json={"model": "qwen3:14b"}, headers=AUTH)
+    mgr.join(5)
+    assert client.pulls == []
+    assert "8.3 GB" in mgr.status().error
+
+
+def test_http_status_error_includes_ollama_body(tmp_path):
+    req = httpx.Request("POST", "http://x/api/pull")
+    resp = httpx.Response(
+        404, json={"error": "pull model manifest: file does not exist"}, request=req
+    )
+    err = httpx.HTTPStatusError("bad", request=req, response=resp)
+    mgr = make(tmp_path, FakeClient([err]))
+    run(mgr)
+    s = mgr.status()
+    assert s.state == "error"
+    assert "file does not exist" in s.error
+    assert "internet" not in s.error
 
 
 class BlockingClient(FakeClient):

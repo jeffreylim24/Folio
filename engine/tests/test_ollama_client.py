@@ -2,7 +2,9 @@ import httpx
 import pytest
 import respx
 
+from folio_engine.config import ConfigStore
 from folio_engine.ollama.client import OllamaClient, OllamaError, PullProgress
+from folio_engine.pull import PullManager
 
 BASE = "http://127.0.0.1:11434"
 
@@ -64,3 +66,39 @@ def test_chat_sends_schema_and_returns_content():
 def test_base_url_from_env(monkeypatch):
     monkeypatch.setenv("OLLAMA_HOST", "http://example:1234")
     assert OllamaClient()._base_url == "http://example:1234"
+
+
+@respx.mock
+def test_pull_http_error_keeps_ollama_body_end_to_end(tmp_path):
+    respx.post(f"{BASE}/api/pull").mock(
+        return_value=httpx.Response(
+            404, json={"error": "pull model manifest: file does not exist"}
+        )
+    )
+    config = ConfigStore(tmp_path / "settings.json")
+    mgr = PullManager(OllamaClient(BASE), config, lambda: 100)
+    mgr.start("nope:1b", None)
+    mgr.join(5)
+    s = mgr.status()
+    assert s.state == "error"
+    assert "file does not exist" in s.error
+    assert "internet" not in s.error
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("0.0.0.0", "http://127.0.0.1:11434"),
+        ("0.0.0.0:11434", "http://127.0.0.1:11434"),
+        ("localhost", "http://localhost:11434"),
+        ("http://127.0.0.1:11434", "http://127.0.0.1:11434"),
+        ("", "http://127.0.0.1:11434"),
+        ("[::]:11434", "http://127.0.0.1:11434"),
+        (":8080", "http://127.0.0.1:8080"),
+        ("http://0.0.0.0:5000/", "http://127.0.0.1:5000"),
+        ("example:1234", "http://example:1234"),
+    ],
+)
+def test_ollama_host_is_normalised(monkeypatch, host, expected):
+    monkeypatch.setenv("OLLAMA_HOST", host)
+    assert OllamaClient()._base_url == expected

@@ -5,7 +5,7 @@ from typing import Literal
 
 import httpx
 
-from .catalog import DISK_HEADROOM_GB, MODEL_CATALOG
+from .catalog import DISK_HEADROOM_GB
 from .config import ConfigStore
 from .ollama.client import OllamaClient, OllamaError
 
@@ -17,6 +17,17 @@ MSG_OLLAMA_DOWN = (
     "Folio couldn't reach Ollama. Make sure Ollama is running "
     "and try again; the download will resume where it left off."
 )
+
+
+def _ollama_error_text(response: httpx.Response) -> str:
+    """Ollama's own error message from a failed response, if it sent one."""
+    try:
+        err = response.json().get("error")
+    except (ValueError, AttributeError, httpx.ResponseNotRead):
+        err = None
+    if isinstance(err, str) and err.strip():
+        return err.strip()[:200]
+    return f"it answered with error {response.status_code}."
 
 
 @dataclass
@@ -41,18 +52,26 @@ class PullManager:
         self._lock = threading.Lock()
         self._status = PullStatus("idle", None, 0, 0, None)
         self._thread: threading.Thread | None = None
+        self._resume_thread: threading.Thread | None = None
 
     def status(self) -> PullStatus:
         with self._lock:
             return PullStatus(**self._status.__dict__)
 
     def join(self, timeout: float | None = None) -> None:
-        thread = self._thread
-        if thread is not None:
-            thread.join(timeout)
+        """Wait for a background resume check, then for the pull itself."""
+        for attr in ("_resume_thread", "_thread"):
+            thread = getattr(self, attr)
+            if thread is not None:
+                thread.join(timeout)
 
     def start(self, model: str, size_gb: float | None) -> None:
-        """Begin (or resume) a pull in the background. No-op if one is running."""
+        """Begin (or resume) a pull in the background. No-op if one is running.
+
+        `size_gb` enables the full free-space check; pass None when resuming,
+        since part of the model may already be on disk (Ollama reports its own
+        disk-full error if space really runs out).
+        """
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return
@@ -87,11 +106,30 @@ class PullManager:
                 with self._lock:
                     self._status = PullStatus("done", model, 0, 0, None)
                 return
-            size = next((m.size_gb for m in MODEL_CATALOG if m.name == model), None)
-            self.start(model, size)
+            # Resuming: part of the model may already be on disk.
+            self.start(model, None)
         except Exception:  # noqa: BLE001
             # Ollama may simply not be running yet; stay idle.
             return
+
+    def resume_in_background(self) -> None:
+        """Run resume_if_needed off the caller's thread, if a resume could apply.
+
+        Cheap to call often: does nothing unless the pull is idle, settings
+        name an Ollama model, and no other resume check is running.
+        """
+        with self._lock:
+            if self._status.state != "idle":
+                return
+            if self._resume_thread is not None and self._resume_thread.is_alive():
+                return
+            settings = self._config.load()
+            if settings.provider != "ollama" or not settings.model:
+                return
+            self._resume_thread = threading.Thread(
+                target=self.resume_if_needed, daemon=True
+            )
+            self._resume_thread.start()
 
     def _set_error(self, message: str) -> None:
         with self._lock:
@@ -116,6 +154,10 @@ class PullManager:
             self._set_error(MSG_INTERRUPTED)
         except OllamaError as e:
             self._set_error(f"Ollama couldn't download the model: {e}")
+        except httpx.HTTPStatusError as e:
+            self._set_error(
+                f"Ollama couldn't download the model: {_ollama_error_text(e.response)}"
+            )
         except httpx.ConnectError:
             self._set_error(MSG_OLLAMA_DOWN)
         except Exception:  # noqa: BLE001

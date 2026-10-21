@@ -28,9 +28,10 @@ ALLOWED_ORIGINS = [
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Startup must never fail because of a download.
+    # Startup must never fail or wait because of a download: the resume
+    # check talks to Ollama, so it runs on a background thread.
     with suppress(Exception):
-        app.state.pull_manager.resume_if_needed()
+        app.state.pull_manager.resume_in_background()
     yield
 
 
