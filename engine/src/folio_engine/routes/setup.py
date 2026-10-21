@@ -60,6 +60,13 @@ def put_model(choice: ModelChoice, request: Request) -> dict[str, bool]:
     tier = next((m for m in MODEL_CATALOG if m.name == choice.model), None)
     if tier is None:
         raise HTTPException(400, "That model isn't one Folio can set up.")
+    pulls = request.app.state.pull_manager
+    active = pulls.status()
+    if active.state == "downloading" and active.model != tier.name:
+        raise HTTPException(
+            409,
+            "Another model is already downloading. Wait for it to finish or retry.",
+        )
     config = request.app.state.config
     current = config.load()
     config.save(
@@ -67,10 +74,10 @@ def put_model(choice: ModelChoice, request: Request) -> dict[str, bool]:
             provider="ollama",
             model=tier.name,
             base_url=current.base_url,
-            setup_complete=current.setup_complete,
+            setup_complete=False,
         )
     )
-    request.app.state.pull_manager.start(tier.name, tier.size_gb)
+    pulls.start(tier.name, tier.size_gb)
     return {"started": True}
 
 

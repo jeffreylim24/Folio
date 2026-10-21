@@ -1,3 +1,5 @@
+import threading
+
 import httpx
 from fastapi.testclient import TestClient
 
@@ -193,3 +195,51 @@ def test_startup_calls_resume_if_needed(tmp_path):
     with TestClient(create_app("secret", tmp_path, pull_manager=Spy())) as tc:
         assert tc.get("/health", headers=AUTH).status_code == 200
     assert Spy.called
+
+
+class BlockingClient(FakeClient):
+    def __init__(self):
+        super().__init__()
+        self.release = threading.Event()
+
+    def pull(self, model):
+        self.pulls.append(model)
+        yield p("pulling a", "a", 100, 10)
+        self.release.wait(5)
+        yield p("success")
+
+
+def test_second_start_during_pull_is_noop(tmp_path):
+    client = BlockingClient()
+    mgr = make(tmp_path, client)
+    mgr.start("qwen3:8b", 5.2)
+    mgr.start("qwen3:14b", 9.3)
+    client.release.set()
+    mgr.join(5)
+    assert client.pulls == ["qwen3:8b"]
+
+
+def test_put_other_model_while_downloading_409(tmp_path):
+    client = BlockingClient()
+    tc, mgr = app_with(tmp_path, client)
+    store = ConfigStore(tmp_path / "settings.json")
+    store.save(Settings(provider="ollama", model="qwen3:8b"))
+    mgr.start("qwen3:8b", 5.2)
+    r = tc.put("/setup/model", json={"model": "qwen3:14b"}, headers=AUTH)
+    assert r.status_code == 409
+    assert "already downloading" in r.json()["detail"]
+    assert store.load().model == "qwen3:8b"
+    r = tc.put("/setup/model", json={"model": "qwen3:8b"}, headers=AUTH)
+    assert r.status_code == 202
+    client.release.set()
+    mgr.join(5)
+    assert client.pulls == ["qwen3:8b"]
+
+
+def test_put_model_resets_setup_complete(tmp_path):
+    tc, mgr = app_with(tmp_path, FakeClient([p("success")]))
+    store = ConfigStore(tmp_path / "settings.json")
+    store.save(Settings(provider="ollama", model="qwen3:8b", setup_complete=True))
+    tc.put("/setup/model", json={"model": "qwen3:14b"}, headers=AUTH)
+    mgr.join(5)
+    assert store.load().setup_complete is False
