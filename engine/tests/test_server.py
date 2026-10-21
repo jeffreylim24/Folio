@@ -37,3 +37,11 @@ def test_state_and_overrides(tmp_path):
     app = create_app("secret", tmp_path, config=fake)
     assert app.state.data_dir == tmp_path
     assert app.state.config is fake
+
+
+def test_config_store_wired_to_data_dir(tmp_path):
+    from folio_engine.config import ConfigStore
+
+    app = create_app("secret", tmp_path)
+    assert isinstance(app.state.config, ConfigStore)
+    assert app.state.config.path == tmp_path / "settings.json"

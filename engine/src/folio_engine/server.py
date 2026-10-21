@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
 from .auth import require_token
+from .config import ConfigStore
 
 ALLOWED_ORIGINS = [
     "tauri://localhost",
@@ -18,6 +19,7 @@ def create_app(token: str, data_dir: Path, **overrides: Any) -> FastAPI:
     app = FastAPI(title="Folio Engine", version=__version__)
     app.state.token = token
     app.state.data_dir = data_dir
+    app.state.config = ConfigStore(data_dir / "settings.json")
     for name, value in overrides.items():
         setattr(app.state, name, value)
 
