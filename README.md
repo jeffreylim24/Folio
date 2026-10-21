@@ -10,7 +10,6 @@ The only times Folio uses the internet:
 
 - To download and install Ollama and the AI model you pick.
 - To talk to an AI provider, but only if you choose to use your own API key instead. In that case your text is sent to that provider, and you use it at your own risk.
-- To check for app updates.
 
 If you use an API key, it is stored in your operating system's keychain, never in a plain file.
 
@@ -26,8 +25,11 @@ Folio is not code-signed yet, so your computer will warn you the first time. Thi
 ### macOS
 
 1. Open the `.dmg` and drag Folio into Applications.
-2. In Applications, right-click (or Control-click) Folio and choose **Open**.
-3. Click **Open** in the warning dialog. You only need to do this once.
+2. Open Folio from Applications. macOS says it can't verify the app; click **Done** (or **OK**).
+3. Open **System Settings → Privacy & Security**, scroll down to the message about Folio, and click **Open Anyway**.
+4. Confirm with **Open Anyway** and your password. You only need to do this once.
+
+On macOS 14 or earlier you can instead right-click (or Control-click) Folio in Applications, choose **Open**, then click **Open** in the warning dialog.
 
 ### Windows
 
@@ -56,6 +58,7 @@ Run tests:
 ```sh
 cd engine && uv run pytest && uv run ruff check
 cd app && npm test
+cd app/src-tauri && cargo test   # needs the sidecar and `npm run build` first
 ```
 
 Build an installer locally: `scripts/build-engine.sh && cd app && npm run tauri build`. The `.dmg` ends up in `app/src-tauri/target/release/bundle/dmg/`.
