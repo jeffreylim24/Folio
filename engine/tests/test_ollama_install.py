@@ -129,3 +129,14 @@ def test_route_unsupported_os(tmp_path):
     client = TestClient(create_app("secret", tmp_path, installer=None))
     r = client.post("/setup/ollama/install", headers={"Authorization": "Bearer secret"})
     assert r.status_code == 400
+
+
+@respx.mock
+def test_missing_checksum_entry_errors(tmp_path):
+    mock_assets(f"{SHA}  SomethingElse.zip\n")
+    inst, calls = make(tmp_path)
+    st = run(inst)
+    assert st.state == "error"
+    assert "download was corrupted" in st.message
+    assert calls == []
+    assert list(tmp_path.iterdir()) == []
