@@ -2,7 +2,14 @@ import json
 
 import httpx
 
-from .base import COMPLETE_TIMEOUT, LIST_TIMEOUT, Message, bad_shape, send
+from .base import (
+    COMPLETE_TIMEOUT,
+    LIST_TIMEOUT,
+    Message,
+    bad_shape,
+    require_text,
+    send,
+)
 
 BASE = "https://api.anthropic.com/v1"
 
@@ -46,6 +53,7 @@ class AnthropicProvider:
             if json_schema is not None:
                 tool = next(b for b in blocks if b["type"] == "tool_use")
                 return json.dumps(tool["input"])
-            return "".join(b["text"] for b in blocks if b["type"] == "text")
+            text = "".join(b["text"] for b in blocks if b["type"] == "text")
         except (KeyError, TypeError, StopIteration):
             raise bad_shape() from None
+        return require_text(text)

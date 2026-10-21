@@ -98,3 +98,13 @@ def send(
 
 def bad_shape() -> ProviderError:
     return ProviderError("other", "The provider sent a response Folio couldn't read.")
+
+
+def require_text(text: object) -> str:
+    """A completion must contain some text; an empty reply is an error."""
+    if not isinstance(text, str) or not text.strip():
+        raise ProviderError(
+            "other",
+            "The model sent an empty reply. Try again, or choose a different model.",
+        )
+    return text

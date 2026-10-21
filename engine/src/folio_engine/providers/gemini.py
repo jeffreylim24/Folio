@@ -1,6 +1,13 @@
 import httpx
 
-from .base import COMPLETE_TIMEOUT, LIST_TIMEOUT, Message, bad_shape, send
+from .base import (
+    COMPLETE_TIMEOUT,
+    LIST_TIMEOUT,
+    Message,
+    bad_shape,
+    require_text,
+    send,
+)
 
 BASE = "https://generativelanguage.googleapis.com/v1beta"
 
@@ -70,6 +77,7 @@ class GeminiProvider:
         )
         try:
             parts = data["candidates"][0]["content"]["parts"]
-            return "".join(p.get("text", "") for p in parts)
-        except (KeyError, IndexError, TypeError):
+            text = "".join(p.get("text", "") for p in parts)
+        except (KeyError, IndexError, TypeError, AttributeError):
             raise bad_shape() from None
+        return require_text(text)

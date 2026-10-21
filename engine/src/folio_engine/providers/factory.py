@@ -28,6 +28,6 @@ def make_provider(
         return AnthropicProvider(key, settings.model)
     if name == "gemini":
         return GeminiProvider(key, settings.model)
-    return OpenAIProvider(
-        key, settings.model, settings.base_url if name == "openai_compatible" else None
-    )
+    if name == "openai":
+        return OpenAIProvider(key, settings.model, chat_only=True)
+    return OpenAIProvider(key, settings.model, settings.base_url)

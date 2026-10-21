@@ -1,7 +1,13 @@
 import httpx
 
 from ..ollama.client import OllamaClient, OllamaError
-from .base import Message, ProviderError, error_for_status, network_error
+from .base import (
+    Message,
+    ProviderError,
+    error_for_status,
+    network_error,
+    require_text,
+)
 
 
 def _map(exc: Exception) -> ProviderError:
@@ -28,6 +34,7 @@ class OllamaProvider:
 
     def complete(self, messages: list[Message], json_schema: dict | None = None) -> str:
         try:
-            return self._client.chat(self._model or "", list(messages), json_schema)
+            text = self._client.chat(self._model or "", list(messages), json_schema)
         except (httpx.HTTPError, OllamaError, KeyError, ValueError) as exc:
             raise _map(exc) from None
+        return require_text(text)

@@ -293,3 +293,91 @@ def test_gemini_other_400_stays_other():
     with pytest.raises(ProviderError) as ei:
         build("gemini").list_models()
     assert ei.value.kind == "other"
+
+
+OPENAI_IDS = [
+    "text-embedding-3-small",
+    "babbage-002",
+    "gpt-4o",
+    "tts-1",
+    "whisper-1",
+    "dall-e-3",
+    "omni-moderation-latest",
+    "gpt-image-1",
+    "gpt-4o-audio-preview",
+    "gpt-4o-transcribe",
+    "gpt-4o-realtime-preview",
+    "gpt-4o-search-preview",
+    "o3-mini",
+    "chatgpt-4o-latest",
+    "gpt-4.1",
+]
+
+
+@respx.mock
+def test_openai_lists_only_chat_models_gpt_and_o_first():
+    respx.get("https://api.openai.com/v1/models").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": i} for i in OPENAI_IDS]})
+    )
+    assert build("openai").list_models() == [
+        "gpt-4.1",
+        "gpt-4o",
+        "o3-mini",
+        "babbage-002",
+        "chatgpt-4o-latest",
+    ]
+
+
+@respx.mock
+def test_openai_compatible_lists_every_model():
+    respx.get("http://localhost:1234/v1/models").mock(
+        return_value=httpx.Response(
+            200, json={"data": [{"id": "my-embedding"}, {"id": "llama"}]}
+        )
+    )
+    p = build("openai_compatible", base_url="http://localhost:1234/v1")
+    assert p.list_models() == ["my-embedding", "llama"]
+
+
+EMPTY_REPLIES = [
+    (
+        "openai",
+        "https://api.openai.com/v1/chat/completions",
+        {"choices": [{"message": {"content": None}}]},
+    ),
+    (
+        "openai",
+        "https://api.openai.com/v1/chat/completions",
+        {"choices": [{"message": {"content": "  "}}]},
+    ),
+    (
+        "anthropic",
+        "https://api.anthropic.com/v1/messages",
+        {"content": []},
+    ),
+    (
+        "gemini",
+        "https://generativelanguage.googleapis.com/v1beta/models/m:generateContent",
+        {"candidates": [{"content": {"parts": [{"text": ""}]}}]},
+    ),
+]
+
+
+@pytest.mark.parametrize(("provider", "url", "body"), EMPTY_REPLIES)
+@respx.mock
+def test_empty_reply_is_provider_error(provider, url, body):
+    respx.post(url).mock(return_value=httpx.Response(200, json=body))
+    with pytest.raises(ProviderError) as ei:
+        build(provider).complete(MSGS)
+    assert ei.value.kind == "other"
+
+
+@pytest.mark.parametrize("reply", [None, "", " \n"])
+def test_ollama_empty_reply_is_provider_error(reply):
+    class EmptyClient(FakeOllamaClient):
+        def chat(self, model, messages, json_schema=None):
+            return reply
+
+    with pytest.raises(ProviderError) as ei:
+        OllamaProvider(EmptyClient(), "q").complete(MSGS)
+    assert ei.value.kind == "other"
