@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
   push:
     tags: ["v*"]
-    branches: [plan-1-foundation]
 
 jobs:
   build:
@@ -35,6 +34,10 @@ jobs:
         working-directory: engine
         run: uv run pytest -q
 
+      - name: Engine lint
+        working-directory: engine
+        run: uv run ruff check
+
       - name: Build engine sidecar
         shell: bash
         run: bash scripts/build-engine.sh
@@ -46,6 +49,15 @@ jobs:
       - name: App tests
         working-directory: app
         run: npm test
+
+      # The Rust shell embeds the built frontend and needs the sidecar binary.
+      - name: Build frontend
+        working-directory: app
+        run: npm run build
+
+      - name: Shell tests
+        working-directory: app/src-tauri
+        run: cargo test
 
       - name: Engine smoke test (Windows)
         if: runner.os == 'Windows'
