@@ -38,17 +38,24 @@ describe("SetupWizard routing", () => {
   });
 
   it("goes to the Ollama step when running privately is chosen", async () => {
-    stubFetch({ "GET /setup/state": { body: rawState({ ollama: { installed: false, running: false, version: null, app_path: null } }) } });
+    const missing = { installed: false, running: false, version: null, app_path: null };
+    stubFetch({
+      "GET /setup/state": { body: rawState({ ollama: missing }) },
+      "GET /setup/ollama": { body: missing },
+    });
     wizard();
     await userEvent.click(await screen.findByRole("button", { name: /Run privately/ }));
-    expect(await screen.findByText("Step: ollama")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Install Ollama" })).toBeTruthy();
   });
 
   it("goes to the model step when Ollama is running", async () => {
-    stubFetch({ "GET /setup/state": { body: rawState() } });
+    stubFetch({
+      "GET /setup/state": { body: rawState() },
+      "GET /setup/hardware": { body: { hardware: {}, recommendation: { model: null, reason: "memory", message: "Not enough memory.", est_minutes: null, free_disk_needed_gb: null } } },
+    });
     wizard();
     await userEvent.click(await screen.findByRole("button", { name: /Run privately/ }));
-    expect(await screen.findByText("Step: model")).toBeTruthy();
+    expect(await screen.findByText("Not enough memory.")).toBeTruthy();
   });
 
   it("resumes at the download step", async () => {
@@ -56,17 +63,21 @@ describe("SetupWizard routing", () => {
       "GET /setup/state": {
         body: rawState({ settings: { provider: "ollama", model: "qwen3:8b", base_url: null, setup_complete: false } }),
       },
+      "GET /setup/pull": { body: { state: "downloading", model: "qwen3:8b", completed_bytes: 1, total_bytes: 4, error: null } },
     });
     wizard();
-    expect(await screen.findByText("Step: download")).toBeTruthy();
+    expect(await screen.findByText("25%")).toBeTruthy();
   });
 
   it("can switch to the API-key path without an engine call", async () => {
-    const fetchMock = stubFetch({ "GET /setup/state": { body: rawState({ settings: { provider: "ollama", model: null, base_url: null, setup_complete: false } }) } });
+    const fetchMock = stubFetch({
+      "GET /setup/state": { body: rawState({ settings: { provider: "ollama", model: null, base_url: null, setup_complete: false } }) },
+      "GET /setup/hardware": { body: { hardware: {}, recommendation: { model: null, reason: "memory", message: "Not enough memory.", est_minutes: null, free_disk_needed_gb: null } } },
+    });
     wizard();
     await userEvent.click(await screen.findByRole("button", { name: "Use an API key instead" }));
     expect(await screen.findByText(WARNING)).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("completes the API-key path, re-fetching state after each step", async () => {

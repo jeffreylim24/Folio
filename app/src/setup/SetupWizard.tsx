@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { getSetupState, type SetupState } from "../engine";
 import { Home } from "../Home";
 import { nextStep, type Step } from "./flow";
+import { DownloadStep } from "./DownloadStep";
+import { ModelStep } from "./ModelStep";
+import { OllamaStep } from "./OllamaStep";
 import { ProviderChoice } from "./ProviderChoice";
 import { ReadyStep } from "./ReadyStep";
-import { StepPlaceholder } from "./StepPlaceholder";
 
 export function SetupWizard({ onEngineProblem }: { onEngineProblem: (message: string) => void }) {
   const [state, setState] = useState<SetupState | null>(null);
@@ -48,7 +50,7 @@ export function SetupWizard({ onEngineProblem }: { onEngineProblem: (message: st
     setLocalChosen(false);
     void refresh();
   };
-  // Task 10's setup screens call this for "use an API key instead".
+  // The model screen calls this for "use an API key instead".
   const useApiKey = () => setOverride("api-key");
 
   return (
@@ -59,9 +61,9 @@ export function SetupWizard({ onEngineProblem }: { onEngineProblem: (message: st
       {step === "api-key" && (
         <ProviderChoice initial="api" onChooseLocal={chooseLocal} onDone={apiDone} />
       )}
-      {(step === "ollama" || step === "model" || step === "download") && (
-        <StepPlaceholder step={step} onUseApiKey={useApiKey} />
-      )}
+      {step === "ollama" && <OllamaStep onDone={refresh} />}
+      {step === "model" && <ModelStep onDone={refresh} onUseApiKey={useApiKey} />}
+      {step === "download" && <DownloadStep onDone={refresh} />}
       {step === "ready" && <ReadyStep onDone={refresh} />}
       {step === "home" && <Home />}
     </main>
