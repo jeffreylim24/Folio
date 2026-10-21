@@ -140,3 +140,20 @@ def test_missing_checksum_entry_errors(tmp_path):
     assert "download was corrupted" in st.message
     assert calls == []
     assert list(tmp_path.iterdir()) == []
+
+
+@respx.mock
+def test_start_failure_message_is_platform_specific(tmp_path):
+    mock_assets(f"{SHA}  ./Ollama-darwin.zip\n")
+    inst, _ = make(tmp_path / "mac", start_fn=lambda: False)
+    assert run(inst).message == (
+        "Ollama was installed but didn't start. "
+        "Try opening it from your Applications folder."
+    )
+    mock_assets(f"{SHA}  ./OllamaSetup.exe\n", asset="OllamaSetup.exe")
+    inst, _ = make(tmp_path / "win", os_name="windows", start_fn=lambda: False)
+    message = run(inst).message
+    assert "Applications" not in message
+    assert message == (
+        "Ollama was installed but didn't start. Try opening it from the Start menu."
+    )

@@ -2,6 +2,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -10,6 +11,8 @@ import psutil
 
 GB = 1024**3
 MIN_NVIDIA_VRAM_GB = 6
+# subprocess.CREATE_NO_WINDOW only exists on Windows builds of Python.
+CREATE_NO_WINDOW = 0x08000000
 
 
 @dataclass
@@ -39,6 +42,8 @@ def _nvidia_vram_gb() -> float | None:
             text=True,
             timeout=3,
             check=True,
+            # The engine runs windowless; don't flash a console on Windows.
+            creationflags=CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         ).stdout
         # One line per GPU, in MiB; use the largest.
         return max(float(line) for line in out.split() if line) / 1024

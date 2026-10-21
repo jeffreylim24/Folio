@@ -19,10 +19,15 @@ CHUNK = 1024 * 1024
 MSG_NETWORK = "Couldn't download Ollama. Check your internet connection and try again."
 MSG_CORRUPT = "The download was corrupted. Please try again."
 MSG_INSTALL = "Ollama couldn't be installed. Please try again."
-MSG_START = (
-    "Ollama was installed but didn't start. "
-    "Try opening it from your Applications folder."
-)
+MSG_START = {
+    "macos": (
+        "Ollama was installed but didn't start. "
+        "Try opening it from your Applications folder."
+    ),
+    "windows": (
+        "Ollama was installed but didn't start. Try opening it from the Start menu."
+    ),
+}
 
 
 @dataclass
@@ -149,7 +154,7 @@ class Installer:
             installer.unlink(missing_ok=True)
             self._set("starting")
             if not self._start_fn():
-                raise InstallError(MSG_START)
+                raise InstallError(MSG_START[self._os])
             self._set("done", 1.0)
         except InstallError as e:
             self._set("error", message=str(e))
