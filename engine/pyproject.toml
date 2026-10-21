@@ -1,0 +1,32 @@
+[project]
+name = "folio-engine"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Jeffrey Lim", email = "jeffreylim24@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.156.4",
+    "httpx>=0.28.1",
+    "keyring>=25.7.0",
+    "platformdirs>=4.13.5",
+    "psutil>=7.2.2",
+    "uvicorn>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.22.3",
+    "pytest>=9.1.1",
+    "respx>=0.23.1",
+    "ruff>=0.17.1",
+]
+
+[project.scripts]
+folio-engine = "folio_engine.__main__:main"

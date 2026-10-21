@@ -5,3 +5,14 @@ docs/superpowers/
 
 # Agent workspaces
 .superpowers/
+
+# Build artifacts
+engine/.venv/
+engine/build/
+engine/dist/
+*.spec
+__pycache__/
+app/node_modules/
+app/dist/
+app/src-tauri/target/
+app/src-tauri/binaries/
