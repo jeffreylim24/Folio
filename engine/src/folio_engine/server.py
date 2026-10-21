@@ -9,6 +9,7 @@ from .auth import require_token
 from .config import ConfigStore
 from .hardware import detect_hardware
 from .ollama.client import OllamaClient
+from .ollama.install import default_installer
 from .routes import setup
 
 ALLOWED_ORIGINS = [
@@ -25,6 +26,9 @@ def create_app(token: str, data_dir: Path, **overrides: Any) -> FastAPI:
     app.state.config = ConfigStore(data_dir / "settings.json")
     app.state.detect_hardware = detect_hardware
     app.state.ollama_client = OllamaClient()
+    app.state.installer = default_installer(
+        data_dir / "downloads", app.state.ollama_client
+    )
     for name, value in overrides.items():
         setattr(app.state, name, value)
 

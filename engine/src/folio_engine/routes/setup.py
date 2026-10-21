@@ -1,7 +1,7 @@
 from dataclasses import asdict
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import require_token
 from ..catalog import recommend
@@ -27,3 +27,23 @@ def post_ollama_start(request: Request) -> dict[str, bool]:
     client = request.app.state.ollama_client
     status = find_ollama(client)
     return {"running": start_ollama(status, client)}
+
+
+def _installer(request: Request):
+    installer = request.app.state.installer
+    if installer is None:
+        raise HTTPException(
+            400, "One-click install is only available on macOS and Windows."
+        )
+    return installer
+
+
+@router.post("/ollama/install", status_code=202)
+def post_ollama_install(request: Request) -> dict[str, bool]:
+    _installer(request).start()
+    return {"started": True}
+
+
+@router.get("/ollama/install")
+def get_ollama_install(request: Request) -> dict[str, Any]:
+    return asdict(_installer(request).status())
