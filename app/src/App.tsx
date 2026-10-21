@@ -1,51 +1,63 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useState } from "react";
+import { getEngineInfo, restartEngine } from "./engine";
+import { SetupWizard } from "./setup/SetupWizard";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+type Status = { kind: "starting" } | { kind: "ready" } | { kind: "error"; detail: string };
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
-  return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
-  );
+function describe(e: unknown): string {
+  return typeof e === "string" ? e : e instanceof Error ? e.message : "";
 }
 
-export default App;
+export default function App() {
+  const [status, setStatus] = useState<Status>({ kind: "starting" });
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setStatus({ kind: "starting" });
+    getEngineInfo().then(
+      () => !cancelled && setStatus({ kind: "ready" }),
+      (e: unknown) => !cancelled && setStatus({ kind: "error", detail: describe(e) }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt]);
+
+  const onEngineProblem = useCallback(
+    (detail: string) => setStatus({ kind: "error", detail }),
+    [],
+  );
+
+  async function retry() {
+    try {
+      await restartEngine();
+    } catch (e) {
+      setStatus({ kind: "error", detail: describe(e) });
+      return;
+    }
+    setAttempt((n) => n + 1);
+  }
+
+  if (status.kind === "starting") {
+    return (
+      <main className="page" aria-busy="true">
+        <p>Starting Folio...</p>
+      </main>
+    );
+  }
+  if (status.kind === "error") {
+    return (
+      <main className="page stack">
+        <h1>Folio's engine didn't start</h1>
+        <p>Folio needs its background engine to work. Trying again often fixes this.</p>
+        {status.detail && <p className="detail">{status.detail}</p>}
+        <button type="button" className="primary" onClick={() => void retry()}>
+          Retry
+        </button>
+      </main>
+    );
+  }
+  return <SetupWizard onEngineProblem={onEngineProblem} />;
+}
