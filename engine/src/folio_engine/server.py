@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import __version__
 from .auth import require_token
 from .config import ConfigStore
+from .hardware import detect_hardware
+from .routes import setup
 
 ALLOWED_ORIGINS = [
     "tauri://localhost",
@@ -20,6 +22,7 @@ def create_app(token: str, data_dir: Path, **overrides: Any) -> FastAPI:
     app.state.token = token
     app.state.data_dir = data_dir
     app.state.config = ConfigStore(data_dir / "settings.json")
+    app.state.detect_hardware = detect_hardware
     for name, value in overrides.items():
         setattr(app.state, name, value)
 
@@ -33,5 +36,7 @@ def create_app(token: str, data_dir: Path, **overrides: Any) -> FastAPI:
     @app.get("/health", dependencies=[Depends(require_token)])
     def health() -> dict[str, Any]:
         return {"ok": True, "version": __version__}
+
+    app.include_router(setup.router)
 
     return app
