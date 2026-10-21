@@ -244,3 +244,11 @@ def test_new_routes_require_token(tmp_path):
     assert client.get("/setup/state").status_code == 401
     assert client.post("/setup/test").status_code == 401
     assert client.put("/setup/api-model", json={"model": "x"}).status_code == 401
+
+
+def test_validation_error_does_not_echo_request_body(tmp_path):
+    client, _, _ = api_client(tmp_path)
+    r = client.post("/setup/api-provider", headers=AUTH, json={"api_key": "sk-LEAK"})
+    assert r.status_code == 422
+    assert "sk-LEAK" not in r.text
+    assert r.json() == {"kind": "other", "message": "Invalid request."}

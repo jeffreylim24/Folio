@@ -10,7 +10,9 @@ def _map(exc: Exception) -> ProviderError:
     if isinstance(exc, httpx.ConnectError | httpx.TimeoutException):
         return network_error()
     detail = f" {exc}" if isinstance(exc, OllamaError) and str(exc) else ""
-    return ProviderError("other", f"Something went wrong talking to Ollama.{detail}")
+    return ProviderError(
+        "other", f"Something went wrong talking to the provider.{detail}"
+    )
 
 
 class OllamaProvider:

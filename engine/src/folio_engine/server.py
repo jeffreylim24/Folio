@@ -4,7 +4,10 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.requests import Request
 
 from . import __version__
 from .auth import require_token
@@ -50,6 +53,15 @@ def create_app(token: str, data_dir: Path, **overrides: Any) -> FastAPI:
             app.state.ollama_client,
             app.state.config,
             lambda: free_disk_gb(ollama_models_dir()),
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        # Never echo request values (they can contain API keys).
+        return JSONResponse(
+            status_code=422, content={"kind": "other", "message": "Invalid request."}
         )
 
     app.add_middleware(

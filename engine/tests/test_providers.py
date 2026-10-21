@@ -5,6 +5,7 @@ import pytest
 import respx
 
 from folio_engine.config import Settings
+from folio_engine.ollama.client import OllamaError
 from folio_engine.providers import ProviderError, make_provider
 from folio_engine.providers.ollama import OllamaProvider
 from folio_engine.secrets import SecretStore
@@ -151,7 +152,6 @@ def test_gemini_complete_with_schema():
     [
         ("openai", "https://api.openai.com/v1/models"),
         ("anthropic", "https://api.anthropic.com/v1/models"),
-        ("gemini", "https://generativelanguage.googleapis.com/v1beta/models"),
     ],
 )
 @respx.mock
@@ -227,6 +227,13 @@ def test_ollama_error_mapping():
     with pytest.raises(ProviderError) as ei:
         p.complete(MSGS)
     assert ei.value.kind == "other" and "no model" in ei.value.message
+    assert ei.value.message.startswith("Something went wrong talking to the provider.")
+    p = OllamaProvider(FakeOllamaClient(OllamaError("model missing")), "q")
+    with pytest.raises(ProviderError) as ei:
+        p.complete(MSGS)
+    assert ei.value.message == (
+        "Something went wrong talking to the provider. model missing"
+    )
     p = OllamaProvider(FakeOllamaClient(httpx.ConnectError("x")), "q")
     with pytest.raises(ProviderError) as ei:
         p.list_models()
@@ -237,3 +244,52 @@ def test_missing_key_is_auth_error():
     with pytest.raises(ProviderError) as ei:
         make_provider(Settings(provider="openai"), SecretStore(DictBackend()))
     assert ei.value.kind == "auth"
+
+
+GEMINI_BAD_KEY = {
+    "error": {
+        "code": 400,
+        "status": "INVALID_ARGUMENT",
+        "message": "API key not valid. Please pass a valid API key. KEY-123",
+        "details": [
+            {
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "reason": "API_KEY_INVALID",
+            }
+        ],
+    }
+}
+
+
+@respx.mock
+def test_gemini_invalid_key_400_is_auth_and_never_leaks_key():
+    respx.get("https://generativelanguage.googleapis.com/v1beta/models").mock(
+        return_value=httpx.Response(400, json=GEMINI_BAD_KEY)
+    )
+    with pytest.raises(ProviderError) as ei:
+        build("gemini").list_models()
+    assert ei.value.kind == "auth"
+    assert ei.value.message == "That API key was rejected. Check it and try again."
+    assert "KEY-123" not in str(ei.value)
+
+
+@respx.mock
+def test_gemini_invalid_key_message_only_is_auth():
+    respx.get("https://generativelanguage.googleapis.com/v1beta/models").mock(
+        return_value=httpx.Response(
+            400, json={"error": {"message": "API key not valid."}}
+        )
+    )
+    with pytest.raises(ProviderError) as ei:
+        build("gemini").list_models()
+    assert ei.value.kind == "auth"
+
+
+@respx.mock
+def test_gemini_other_400_stays_other():
+    respx.get("https://generativelanguage.googleapis.com/v1beta/models").mock(
+        return_value=httpx.Response(400, json={"error": {"message": "bad field"}})
+    )
+    with pytest.raises(ProviderError) as ei:
+        build("gemini").list_models()
+    assert ei.value.kind == "other"

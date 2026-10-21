@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any, Literal, Protocol, TypedDict
 
 import httpx
@@ -49,9 +50,11 @@ def _detail(response: httpx.Response) -> str | None:
     return None
 
 
-def error_for_status(response: httpx.Response) -> ProviderError:
+def error_for_status(
+    response: httpx.Response, invalid_key: bool = False
+) -> ProviderError:
     code = response.status_code
-    if code in (401, 403):
+    if invalid_key or code in (401, 403):
         return ProviderError("auth", _MESSAGES["auth"])
     if code == 429:
         return ProviderError("rate_limit", _MESSAGES["rate_limit"])
@@ -67,7 +70,12 @@ def network_error() -> ProviderError:
 
 
 def send(
-    http: httpx.Client, method: str, url: str, timeout: float, **kwargs: Any
+    http: httpx.Client,
+    method: str,
+    url: str,
+    timeout: float,
+    is_invalid_key: Callable[[httpx.Response], bool] | None = None,
+    **kwargs: Any,
 ) -> Any:
     """Perform a request and return parsed JSON, mapping failures to ProviderError."""
     try:
@@ -79,7 +87,7 @@ def send(
             "other", "Something went wrong talking to the provider."
         ) from None
     if r.status_code >= 400:
-        raise error_for_status(r)
+        raise error_for_status(r, bool(is_invalid_key and is_invalid_key(r)))
     try:
         return r.json()
     except ValueError:
