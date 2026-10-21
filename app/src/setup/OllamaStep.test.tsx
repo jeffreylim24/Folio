@@ -147,4 +147,49 @@ describe("OllamaStep", () => {
     await settle(3000);
     expect(calls(fetchMock, "GET /setup/ollama/install")).toHaveLength(1);
   });
+
+  it("keeps only one install poll in flight and calls onDone once", async () => {
+    const pending: Array<(r: Response) => void> = [];
+    const ok = (body: object, status = 200) =>
+      new Response(JSON.stringify(body), { status });
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      const key = `${init?.method ?? "GET"} ${new URL(url).pathname}`;
+      if (key === "GET /setup/ollama") return Promise.resolve(ok(status({ installed: false })));
+      if (key === "POST /setup/ollama/install") return Promise.resolve(ok({ started: true }, 202));
+      if (key === "GET /setup/ollama/install") return new Promise<Response>((r) => pending.push(r));
+      throw new Error(`unexpected ${key}`);
+    });
+    const onDone = vi.fn();
+    render(<OllamaStep onDone={onDone} />);
+    await settle();
+    await click("Install Ollama");
+    await settle(5000);
+    expect(pending).toHaveLength(1);
+    await act(async () => { pending[0](ok({ state: "done", progress: 1, message: null })); });
+    await settle(3000);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a poll answer that arrives after the install failed", async () => {
+    const polls: Array<(r: Response) => void> = [];
+    let failInstall: (r: Response) => void = () => {};
+    const ok = (body: object, st = 200) => new Response(JSON.stringify(body), { status: st });
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      const key = `${init?.method ?? "GET"} ${new URL(url).pathname}`;
+      if (key === "GET /setup/ollama") return Promise.resolve(ok(status({ installed: false })));
+      if (key === "POST /setup/ollama/install")
+        return new Promise<Response>((r) => (failInstall = r));
+      if (key === "GET /setup/ollama/install") return new Promise<Response>((r) => polls.push(r));
+      throw new Error(`unexpected ${key}`);
+    });
+    render(<OllamaStep onDone={() => {}} />);
+    await settle();
+    await click("Install Ollama");
+    await settle(1000); // a poll goes out while the install request is open
+    expect(polls).toHaveLength(1);
+    await act(async () => { failInstall(ok({ detail: "Install is unavailable." }, 400)); });
+    expect(screen.getByRole("alert").textContent).toBe("Install is unavailable.");
+    await act(async () => { polls[0](ok({ state: "downloading", progress: 0.5, message: null })); });
+    expect(screen.getByRole("alert").textContent).toBe("Install is unavailable.");
+  });
 });

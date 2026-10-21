@@ -30,6 +30,12 @@ function messageOf(e: unknown): string {
 export function OllamaStep({ onDone }: { onDone: () => void }) {
   const [view, setView] = useState<View>({ kind: "checking" });
   const alive = useRef(true);
+  const finished = useRef(false);
+  const finish = useCallback(() => {
+    if (finished.current) return;
+    finished.current = true;
+    onDone();
+  }, [onDone]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -43,16 +49,16 @@ export function OllamaStep({ onDone }: { onDone: () => void }) {
       const status = await api<RawStatus & Partial<OllamaStatus>>("/setup/ollama");
       if (!alive.current) return;
       if (!status.installed) return setView({ kind: "not-installed" });
-      if (status.running) return onDone();
+      if (status.running) return finish();
       setView({ kind: "starting" });
       const started = await api<{ running: boolean }>("/setup/ollama/start", { method: "POST" });
       if (!alive.current) return;
-      if (started.running) onDone();
+      if (started.running) finish();
       else setView({ kind: "didnt-start" });
     } catch (e) {
       if (alive.current) setView({ kind: "install-error", message: messageOf(e) });
     }
-  }, [onDone]);
+  }, [finish]);
 
   useEffect(() => {
     void check();
@@ -69,23 +75,30 @@ export function OllamaStep({ onDone }: { onDone: () => void }) {
     }
   };
 
+  // Answers only count while the screen is still showing the install.
+  const whileInstalling = (next: View) => (v: View) =>
+    v.kind === "installing" ? next : v;
   const pollInstall = async () => {
     try {
       const status = await api<InstallStatus>("/setup/ollama/install");
       if (!alive.current) return;
-      if (status.state === "done") return onDone();
+      if (status.state === "done") return finish();
       if (status.state === "error") {
-        return setView({
-          kind: "install-error",
-          message: status.message ?? "Something went wrong. Please try again.",
-        });
+        return setView(
+          whileInstalling({
+            kind: "install-error",
+            message: status.message ?? "Something went wrong. Please try again.",
+          }),
+        );
       }
-      setView({ kind: "installing", status });
+      setView(whileInstalling({ kind: "installing", status }));
     } catch (e) {
-      if (alive.current) setView({ kind: "install-error", message: messageOf(e) });
+      if (alive.current) {
+        setView(whileInstalling({ kind: "install-error", message: messageOf(e) }));
+      }
     }
   };
-  usePoll(() => void pollInstall(), view.kind === "installing");
+  usePoll(pollInstall, view.kind === "installing");
 
   if (view.kind === "checking" || view.kind === "starting") {
     return (

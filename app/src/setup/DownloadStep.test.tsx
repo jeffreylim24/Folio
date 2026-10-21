@@ -76,4 +76,45 @@ describe("DownloadStep", () => {
     await settle(3000);
     expect(count(fetchMock, "GET /setup/pull")).toBe(1);
   });
+
+  it("keeps only one request in flight when the engine is slow", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      calls.push(new URL(url).pathname);
+      return new Promise<Response>(() => {});
+    });
+    render(<DownloadStep onDone={() => {}} />);
+    await settle(5000);
+    expect(calls.filter((c) => c === "/setup/pull")).toHaveLength(1);
+  });
+
+  it("ignores a response that was requested before Retry", async () => {
+    const pending: Array<(r: Response) => void> = [];
+    const reply = (body: object) =>
+      new Response(JSON.stringify(body), { status: 200 });
+    const pullBody = (state: string, completed: number, error: string | null) => ({
+      state, model: "m", completed_bytes: completed, total_bytes: 3, error,
+    });
+    let gets = 0;
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      const path = new URL(url).pathname;
+      if (path === "/setup/pull/retry") return Promise.resolve(reply({ started: true }));
+      if (init?.method) throw new Error("unexpected");
+      gets += 1;
+      if (gets === 1) return Promise.resolve(reply(pullBody("error", 1, "Old error")));
+      return new Promise<Response>((resolve) => pending.push(resolve));
+    });
+    render(<DownloadStep onDone={() => {}} />);
+    await settle();
+    expect(screen.getByRole("alert").textContent).toBe("Old error");
+    await settle(1000); // tick: GET #2 stays open
+    expect(pending).toHaveLength(1);
+    await act(async () => { screen.getByRole("button", { name: "Retry" }).click(); });
+    await settle(); // retry's own poll: GET #3
+    expect(pending).toHaveLength(2);
+    await act(async () => { pending[1](reply(pullBody("downloading", 1, null))); });
+    await act(async () => { pending[0](reply(pullBody("error", 1, "Old error"))); });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("33%")).toBeTruthy();
+  });
 });

@@ -18,11 +18,14 @@ export function DownloadStep({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
   const finished = useRef(false);
+  // Bumped by Retry so answers to earlier requests are dropped.
+  const generation = useRef(0);
 
   const poll = async () => {
+    const mine = generation.current;
     try {
       const next = await api<RawPull>("/setup/pull");
-      if (!alive.current) return;
+      if (!alive.current || mine !== generation.current) return;
       setError(null);
       setPull(next);
       if (next.state === "done" && !finished.current) {
@@ -30,22 +33,20 @@ export function DownloadStep({ onDone }: { onDone: () => void }) {
         onDone();
       }
     } catch (e) {
-      if (alive.current) setError(messageOf(e));
+      if (alive.current && mine === generation.current) setError(messageOf(e));
     }
   };
 
   useEffect(() => {
     alive.current = true;
-    void poll();
     return () => {
       alive.current = false;
     };
-    // Initial poll on mount only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  usePoll(() => void poll(), true);
+  usePoll(poll, true, true);
 
   const retry = async () => {
+    generation.current += 1;
     try {
       await api("/setup/pull/retry", { method: "POST" });
       setPull(null);
