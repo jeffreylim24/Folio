@@ -15,12 +15,10 @@ If you use an API key, it is stored in your operating system's keychain, never i
 
 ## Minimum requirements
 
-These numbers are provisional, being measured.
-
 To run the AI on your own computer you need:
 
-- A Mac with about 16 GB of memory, or on Windows either 16 GB of RAM or an NVIDIA graphics card with 8 GB.
-- About 10 GB of free disk space for the smallest model (more for larger ones).
+- A Mac with 16 GB of memory, or on Windows either 16 GB of RAM or an NVIDIA graphics card with 8 GB. A Mac with 32 GB can run the best-quality model.
+- About 6 GB of free disk space for the smallest model, and up to 26 GB for the largest.
 - macOS or Windows.
 
 Any computer that runs Folio can use your own API key instead.

@@ -80,6 +80,38 @@ def test_advise_nothing_runs_well():
     assert "API key" in a.message
 
 
+def test_below_minimum_specs_recommend_nothing():
+    # Usable 5.4 is above small's 4.1 GB recommended, but an 8 GB computer is
+    # below the minimum, so it is only ever a tight fit.
+    small = CatalogModel("s:q", "s", "M", 3.0, 3.4, True, "b", "small")
+    a = advise(mac(8, 500), [small, B, X])
+    assert a.recommended is None and a.reason == "memory"
+    assert a.tiers[0].fit == "tight"
+    win = HardwareInfo("windows", "AMD64", 8, False, None, 500)
+    assert advise(win, [small, B, X]).recommended is None
+
+
+def test_minimum_spec_edges():
+    small = CatalogModel("s:q", "s", "M", 3.0, 3.4, True, "b", "small")
+    assert advise(mac(16, 500), [small, B, X]).recommended == "b:q"  # usable 10.7
+    # Windows 16 GB often reports a little less; still at the minimum.
+    win16 = HardwareInfo("windows", "AMD64", 15.8, False, None, 500)
+    assert advise(win16, [small, B, X]).recommended == "s:q"
+    # An 8 GB NVIDIA card meets the minimum even with 8 GB of RAM.
+    gpu = HardwareInfo("windows", "AMD64", 8, False, 8, 500)
+    assert advise(gpu, [small, B, X]).tiers[0].fit == "ok"
+
+
+def test_cpu_only_recommends_small_even_when_bigger_fits():
+    hw = HardwareInfo("windows", "AMD64", 32, False, None, 500)  # usable 16.0
+    a = advise(hw, [S, B, X])
+    assert a.recommended == "s:q"
+    assert a.tiers[1].fit == "ok"
+    assert a.tiers[1].note == (
+        "Fits in your 16 GB, but replies will be slow without a graphics card."
+    )
+
+
 def test_advise_disk_short():
     a = advise(mac(24, 7.0), [S, B, X])  # B needs 6 + 2 headroom = 8
     assert a.recommended == "b:q" and a.reason == "disk"
@@ -135,3 +167,5 @@ def test_real_catalog_shape():
     assert find_model("qwen3:14b") is None
     assert find_model("qwen3.5:9b-q4_K_M").name == "qwen3.5:9b"
     assert advise(mac(24, 500)).recommended == "qwen3.5:9b-q4_K_M"
+    assert advise(mac(32, 500)).recommended == "qwen3.8:27b-q4_K_M"  # usable 21.4
+    assert advise(mac(8, 500)).recommended is None

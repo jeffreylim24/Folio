@@ -89,7 +89,10 @@ def test_ollama_error_includes_message(tmp_path):
 def test_network_error_maps_to_plain_interrupted_message(tmp_path):
     from folio_engine.pull import MSG_INTERRUPTED
 
-    for text in ("dial tcp: lookup registry: no such host", "pull model manifest: i/o timeout"):
+    for text in (
+        "dial tcp: lookup registry: no such host",
+        "pull model manifest: i/o timeout",
+    ):
         mgr = make(tmp_path, FakeClient([OllamaError(text)]))
         run(mgr)
         assert mgr.status().error == MSG_INTERRUPTED
@@ -99,7 +102,9 @@ def test_network_http_error_body_maps_to_interrupted(tmp_path):
     from folio_engine.pull import MSG_INTERRUPTED
 
     req = httpx.Request("POST", "http://x/api/pull")
-    resp = httpx.Response(500, json={"error": "dial tcp 1.2.3.4:443: connection refused"})
+    resp = httpx.Response(
+        500, json={"error": "dial tcp 1.2.3.4:443: connection refused"}
+    )
     err = httpx.HTTPStatusError("bad", request=req, response=resp)
     mgr = make(tmp_path, FakeClient([err]))
     run(mgr)
@@ -355,9 +360,7 @@ def test_put_model_still_checks_full_size(tmp_path):
 
 def test_http_status_error_includes_ollama_body(tmp_path):
     req = httpx.Request("POST", "http://x/api/pull")
-    resp = httpx.Response(
-        404, json={"error": "file does not exist"}, request=req
-    )
+    resp = httpx.Response(404, json={"error": "file does not exist"}, request=req)
     err = httpx.HTTPStatusError("bad", request=req, response=resp)
     mgr = make(tmp_path, FakeClient([err]))
     run(mgr)
@@ -409,7 +412,9 @@ def test_put_other_model_while_downloading_409(tmp_path):
 def test_put_model_resets_setup_complete(tmp_path):
     tc, mgr = app_with(tmp_path, FakeClient([p("success")]))
     store = ConfigStore(tmp_path / "settings.json")
-    store.save(Settings(provider="ollama", model="qwen3.5:4b-q4_K_M", setup_complete=True))
+    store.save(
+        Settings(provider="ollama", model="qwen3.5:4b-q4_K_M", setup_complete=True)
+    )
     tc.put("/setup/model", json={"model": "qwen3.5:9b-q4_K_M"}, headers=AUTH)
     mgr.join(5)
     assert store.load().setup_complete is False
@@ -592,7 +597,9 @@ def test_retry_with_saved_progress_passes_catalog_size(tmp_path):
     config.save(Settings(provider="ollama", model="qwen3.5:9b-q4_K_M"))
     path = tmp_path / "pull-progress.json"
     path.write_text(
-        json.dumps({"model": "qwen3.5:9b-q4_K_M", "completed_bytes": 1, "total_bytes": 9})
+        json.dumps(
+            {"model": "qwen3.5:9b-q4_K_M", "completed_bytes": 1, "total_bytes": 9}
+        )
     )
     mgr = PullManager(client, config, lambda: 3.0, progress_path=path)
     tc = TestClient(
@@ -646,7 +653,9 @@ def test_error_keeps_seeded_progress(tmp_path):
     import json
 
     path.write_text(json.dumps(seed))
-    mgr = PullManager(client, ConfigStore(tmp_path / "s.json"), lambda: 100.0, progress_path=path)
+    mgr = PullManager(
+        client, ConfigStore(tmp_path / "s.json"), lambda: 100.0, progress_path=path
+    )
     mgr.start(M, None)
     mgr.join(5)
     s = mgr.status()
@@ -671,7 +680,9 @@ def test_has_saved_progress(tmp_path):
     import json
 
     path = tmp_path / "pull-progress.json"
-    mgr = PullManager(FakeClient(), ConfigStore(tmp_path / "s.json"), lambda: 1.0, progress_path=path)
+    mgr = PullManager(
+        FakeClient(), ConfigStore(tmp_path / "s.json"), lambda: 1.0, progress_path=path
+    )
     assert mgr.has_saved_progress(M) is False
     path.write_text(json.dumps({"model": M, "completed_bytes": 5, "total_bytes": 10}))
     assert mgr.has_saved_progress(M) is True
