@@ -5,7 +5,7 @@ from typing import Literal
 
 import httpx
 
-from .catalog import DISK_HEADROOM_GB
+from .catalog import DISK_HEADROOM_GB, find_model
 from .config import ConfigStore
 from .ollama.client import OllamaClient, OllamaError
 
@@ -102,6 +102,8 @@ class PullManager:
             if settings.provider != "ollama" or not settings.model:
                 return
             model = settings.model
+            if find_model(model) is None:
+                return  # only catalog models are supported
             if model in self._client.list_models():
                 with self._lock:
                     self._status = PullStatus("done", model, 0, 0, None)

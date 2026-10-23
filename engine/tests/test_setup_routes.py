@@ -19,9 +19,34 @@ def test_hardware_route(tmp_path):
     r = client.get("/setup/hardware", headers=AUTH)
     body = r.json()
     assert r.status_code == 200
-    assert body["hardware"]["total_ram_gb"] == 24
-    assert body["recommendation"]["model"]["name"] == "qwen3:14b"
-    assert body["recommendation"]["reason"] == "ok"
+    assert body["recommended"] == "qwen3.5:9b-q4_K_M"
+    assert body["reason"] == "ok"
+    assert len(body["tiers"]) == 3
+    assert body["device"]["usable_gb"] == 16.1
+
+
+def test_put_model_rejects_uncatalogued(tmp_path):
+    client = TestClient(create_app("secret", tmp_path))
+    r = client.put("/setup/model", json={"model": "qwen3:14b"}, headers=AUTH)
+    assert r.status_code == 400
+
+
+def test_state_drops_uncatalogued_model(tmp_path):
+    app = create_app("secret", tmp_path)
+    app.state.config.save(Settings("ollama", "qwen3:14b", None, True))
+    body = TestClient(app).get("/setup/state", headers=AUTH).json()
+    assert body["settings"]["model"] is None
+    assert body["settings"]["setup_complete"] is False
+    saved = app.state.config.load()
+    assert saved.model is None and saved.setup_complete is False
+
+
+def test_state_keeps_catalog_model(tmp_path):
+    app = create_app("secret", tmp_path)
+    app.state.config.save(Settings("ollama", "qwen3.5:9b-q4_K_M", None, True))
+    body = TestClient(app).get("/setup/state", headers=AUTH).json()
+    assert body["settings"]["model"] == "qwen3.5:9b-q4_K_M"
+    assert body["settings"]["setup_complete"] is True
 
 
 def test_hardware_route_requires_token(tmp_path):
@@ -340,9 +365,9 @@ def test_put_provider_ollama_saves_choice(tmp_path):
 
 def test_put_provider_ollama_keeps_chosen_ollama_model(tmp_path):
     client, _, app = api_client(tmp_path)
-    app.state.config.save(Settings(provider="ollama", model="qwen3:8b"))
+    app.state.config.save(Settings(provider="ollama", model="qwen3.5:4b-q4_K_M"))
     client.put("/setup/provider", headers=AUTH, json={"provider": "ollama"})
-    assert app.state.config.load().model == "qwen3:8b"
+    assert app.state.config.load().model == "qwen3.5:4b-q4_K_M"
 
 
 def test_put_provider_rejects_api_providers_and_needs_token(tmp_path):

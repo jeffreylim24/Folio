@@ -7,7 +7,7 @@ from keyring.errors import KeyringError
 from pydantic import BaseModel
 
 from ..auth import require_token
-from ..catalog import MODEL_CATALOG, recommend
+from ..catalog import advise, find_model
 from ..config import ProviderName, Settings
 from ..hardware import ollama_models_dir
 from ..ollama.detect import find_ollama, start_ollama
@@ -28,7 +28,7 @@ MSG_KEYCHAIN_READ = (
 @router.get("/hardware")
 def get_hardware(request: Request) -> dict[str, Any]:
     hw = request.app.state.detect_hardware(ollama_models_dir())
-    return {"hardware": asdict(hw), "recommendation": asdict(recommend(hw))}
+    return asdict(advise(hw))
 
 
 @router.get("/ollama")
@@ -90,12 +90,12 @@ class ModelChoice(BaseModel):
 
 @router.put("/model", status_code=202)
 def put_model(choice: ModelChoice, request: Request) -> dict[str, bool]:
-    tier = next((m for m in MODEL_CATALOG if m.name == choice.model), None)
-    if tier is None:
+    model = find_model(choice.model)
+    if model is None:
         raise HTTPException(400, "That model isn't one Folio can set up.")
     pulls = request.app.state.pull_manager
     active = pulls.status()
-    if active.state == "downloading" and active.model != tier.name:
+    if active.state == "downloading" and active.model != model.tag:
         raise HTTPException(
             409,
             "Another model is already downloading. Wait for it to finish or retry.",
@@ -105,12 +105,12 @@ def put_model(choice: ModelChoice, request: Request) -> dict[str, bool]:
     config.save(
         Settings(
             provider="ollama",
-            model=tier.name,
+            model=model.tag,
             base_url=current.base_url,
             setup_complete=False,
         )
     )
-    pulls.start(tier.name, tier.size_gb)
+    pulls.start(model.tag, model.download_gb)
     return {"started": True}
 
 
@@ -219,6 +219,15 @@ def post_test(request: Request):
 def get_state(request: Request) -> dict[str, Any]:
     state = request.app.state
     settings = state.config.load()
+    if (
+        settings.provider == "ollama"
+        and settings.model
+        and find_model(settings.model) is None
+    ):
+        # Only catalog models are supported; forget any other saved choice.
+        settings.model = None
+        settings.setup_complete = False
+        state.config.save(settings)
     try:
         has_key = bool(
             settings.provider
