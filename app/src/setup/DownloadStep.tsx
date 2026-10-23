@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Clock, Lightbulb, ShieldCheck } from "lucide-react";
 import { api } from "../engine";
 import { ProgressBar } from "../ui/ProgressBar";
 import { StepShell } from "../ui/StepShell";
@@ -23,9 +24,12 @@ type Sample = { t: number; bytes: number };
 
 const defaultRandomIndex = (n: number) => Math.floor(Math.random() * n);
 
+function formatBytes(bytes: number): string {
+  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
+}
+
 function formatSize(done: number, total: number): string {
-  if (total >= 1e9) return `${(done / 1e9).toFixed(1)} of ${(total / 1e9).toFixed(1)} GB`;
-  return `${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB`;
+  return `${formatBytes(done)} / ${formatBytes(total)}`;
 }
 
 function formatLeft(seconds: number): string {
@@ -155,29 +159,43 @@ export function DownloadStep({ position, onDone, onUseApiKey, randomIndex = defa
         <>
           <DownloadArt paused={stalled} />
           <ProgressBar value={fraction} label="Download progress" />
-          <div className="download-meta">
-            <span>{percent}%</span>
-            {resuming && <span role="status">Resuming…</span>}
+          <div className="download-stats">
+            <span className="pct">{percent}%</span>
+            <div className="side">
+              {resuming && <span role="status">Resuming…</span>}
+              {known && !resuming && (
+                <>
+                  <span className="size">{formatSize(pull.completed_bytes, pull.total_bytes)}</span>
+                  {secondsLeft !== null && !stalled && (
+                    <span className="eta">
+                      <Clock aria-hidden="true" />
+                      {formatLeft(secondsLeft)}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-          {known && !resuming && (
-            <p className="download-meta">
-              <span>{formatSize(pull.completed_bytes, pull.total_bytes)}</span>
-              {secondsLeft !== null && !stalled && <span>{formatLeft(secondsLeft)}</span>}
-            </p>
-          )}
           {stalled && (
             <p role="status" className="warning paused-note">
               Download paused. Check your internet connection. It'll pick up where it left off when you're back online.
             </p>
           )}
           {showTips && (
-            <p className="download-tip" data-testid="tip" key={tip}>
-              {TIPS[tip]}
-            </p>
+            <div className="download-tip" key={tip}>
+              <span className="tip-icon" aria-hidden="true">
+                <Lightbulb />
+              </span>
+              <div>
+                <div className="tip-label">While you wait</div>
+                <p data-testid="tip">{TIPS[tip]}</p>
+              </div>
+            </div>
           )}
         </>
       )}
-      <p>
+      <p className="safe-note">
+        <ShieldCheck aria-hidden="true" />
         It's safe to close Folio; the download picks up where it left off.
       </p>
       <button type="button" onClick={onUseApiKey}>

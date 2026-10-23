@@ -219,7 +219,7 @@ describe("DownloadStep", () => {
     stubFetch({ "GET /setup/pull": () => pullX("downloading", 600_000_000 + 1_000_000 * n++, 1_000_000_000) });
     render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} randomIndex={() => 0} />);
     await settle();
-    expect(screen.getByText("0.6 of 1.0 GB")).toBeTruthy();
+    expect(screen.getByText("600 MB / 1.0 GB")).toBeTruthy();
     expect(screen.queryByText(/min left|Less than a minute left/)).toBeNull();
     await settle(2000);
     expect(screen.queryByText(/min left|Less than a minute left/)).toBeNull();

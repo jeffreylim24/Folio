@@ -7,7 +7,8 @@
   --badge-tight-ink: #7d5210; --bad-ink: #ffffff;
   --shadow: 0 16px 40px rgba(60,40,80,.09);
   
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 16px;
   line-height: 1.5;
   color: var(--fg);
@@ -71,8 +72,17 @@ body {
 h1 {
   margin: 0.35rem 0 0.5rem;
   font-size: 1.6rem;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+/* Lucide icons size with the text around them. */
+svg.lucide {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  stroke-width: 1.9;
 }
 
 p {
@@ -152,6 +162,10 @@ button:hover:not(:disabled) {
 }
 
 button.primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
   width: 100%;
   align-self: stretch;
   padding: 0.9rem;
@@ -231,28 +245,32 @@ progress {
 }
 
 .check-mark {
-  width: 56px;
-  height: 56px;
-  margin: 0 auto 0.6rem;
-  display: block;
+  width: 60px;
+  height: 60px;
+  margin: 0.2rem auto 0.6rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
   color: var(--ok);
+  animation: pop 0.45s cubic-bezier(0.2, 0.8, 0.2, 1.25) 0.1s both;
 }
 
-.check-mark circle {
-  fill: var(--accent-soft);
-  stroke: currentColor;
-  stroke-width: 2;
+.check-mark svg { width: 30px; height: 30px; }
+
+.quiet-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.2rem 1rem;
 }
 
-.check-mark path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: 30;
-  stroke-dashoffset: 30;
-  animation: draw 0.4s ease-out 0.15s forwards;
+.quiet-links button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.4rem;
 }
 
 /* ---- Tier cards and choices ---- */
@@ -321,7 +339,7 @@ button.choice span {
 }
 
 .tag {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
   font-size: 0.78rem;
   color: var(--muted);
   background: var(--surface-2);
@@ -331,6 +349,7 @@ button.choice span {
 }
 
 .meta {
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
   font-size: 0.85rem;
   margin-top: 0.15rem;
@@ -349,6 +368,9 @@ button.choice span {
 
 .badge {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   font-size: 0.72rem;
   font-weight: 600;
   border-radius: 999px;
@@ -395,6 +417,7 @@ button.choice span {
 }
 
 .fitlabel {
+  font-variant-numeric: tabular-nums;
   display: flex;
   justify-content: space-between;
   font-size: 0.74rem;
@@ -503,9 +526,9 @@ button.choice span {
 .dot.tight { background: var(--warn); }
 .dot.no { background: var(--bad); }
 
-.nm { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85rem; }
+.nm { font-family: var(--mono); font-size: 0.85rem; }
 .opt .mk { color: var(--faint); font-size: 0.8rem; }
-.opt .sz { margin-left: auto; color: var(--muted); font-size: 0.8rem; }
+.opt .sz { margin-left: auto; color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 
 /* ---- Info panel ---- */
 
@@ -526,12 +549,16 @@ button.choice span {
 }
 
 .k { font-size: 0.7rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
-.cell .v { font-weight: 600; }
+.cell .v { font-weight: 600; font-variant-numeric: tabular-nums; }
 .blurb { color: var(--muted); font-size: 0.86rem; margin: 0.6rem 0 0; }
 
 /* ---- Call to action ---- */
 
 .cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
   margin-top: 1.4rem;
   width: 100%;
   font: inherit;
@@ -650,8 +677,9 @@ fieldset:disabled .seg { opacity: 0.55; cursor: not-allowed; }
   to { transform: rotate(360deg); }
 }
 
-@keyframes draw {
-  to { stroke-dashoffset: 0; }
+@keyframes pop {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -660,9 +688,6 @@ fieldset:disabled .seg { opacity: 0.55; cursor: not-allowed; }
   *::after {
     animation: none !important;
     transition: none !important;
-  }
-  .check-mark path {
-    stroke-dashoffset: 0;
   }
 }
 
@@ -683,7 +708,8 @@ fieldset:disabled .seg { opacity: 0.55; cursor: not-allowed; }
 }
 .spec:nth-child(2) { animation-delay: 0.06s; }
 .spec:nth-child(3) { animation-delay: 0.12s; }
-.spec .v { font-size: 1.05rem; font-weight: 600; }
+.spec .k { display: flex; align-items: center; gap: 0.35rem; }
+.spec .v { font-size: 1.05rem; font-weight: 650; font-variant-numeric: tabular-nums; }
 .spec .s { font-size: 0.78rem; color: var(--muted); }
 
 /* ---- Link-style button and low-spec dialog ---- */
@@ -760,22 +786,27 @@ button.linklike {
 
 .download-art {
   position: relative;
-  height: 56px;
+  height: 64px;
   margin: 0.4rem 0 1rem;
   overflow: hidden;
 }
-.art-box, .art-device {
+.art-node {
   position: absolute;
   top: 50%;
-  width: 34px;
-  height: 26px;
-  margin-top: -13px;
-  border-radius: 7px;
-  border: 2px solid var(--border-hi);
+  width: 44px;
+  height: 44px;
+  margin-top: -22px;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  color: var(--muted);
+  border-radius: 12px;
+  border: 1.5px solid var(--border-hi);
   background: var(--surface-2);
+  transition: border-color 0.2s, color 0.2s;
 }
 .art-box { left: 12%; }
-.art-device { right: 12%; border-color: var(--accent); }
+.art-device { right: 12%; border-color: var(--accent); color: var(--accent); }
 .art-packet {
   position: absolute;
   top: 50%;
@@ -791,7 +822,7 @@ button.linklike {
 .art-packet.p2 { animation-delay: 1.2s; }
 .art-packet.p3 { animation-delay: 2.4s; }
 .download-art.paused .art-packet { animation-play-state: paused; opacity: 0.25; }
-.download-art.paused .art-device { border-color: var(--warn); }
+.download-art.paused .art-device { border-color: var(--warn); color: var(--warn); }
 
 @keyframes packet {
   0% { left: 20%; opacity: 0; }
@@ -801,7 +832,47 @@ button.linklike {
 }
 
 .download-meta { display: flex; justify-content: space-between; gap: 1rem; color: var(--muted); font-size: 0.875rem; margin: 0.4rem 0 0; }
-.download-tip { min-height: 3em; margin: 1rem 0; color: var(--muted); text-align: center; animation: rise 0.25s ease-out both; }
+.download-stats {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.download-stats .pct { font-size: 2.4rem; font-weight: 650; line-height: 1; letter-spacing: -0.03em; }
+.download-stats .side { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; text-align: right; }
+.download-stats .size { font-weight: 600; font-size: 0.95rem; }
+.download-stats .eta,
+.download-stats [role="status"] { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--muted); font-size: 0.85rem; }
+
+.download-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  min-height: 5.4rem;
+  margin: 1.3rem 0 0.4rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  animation: rise 0.25s ease-out both;
+}
+.tip-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 10px;
+}
+.tip-label { font-size: 0.66rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
+.download-tip p { margin: 0.15rem 0 0; font-size: 0.92rem; }
+
+.safe-note { display: flex; align-items: center; gap: 0.45rem; color: var(--muted); font-size: 0.85rem; }
 .paused-note { margin: 1rem 0; }
 
 /* ---- Theme toggle ---- */
@@ -826,12 +897,4 @@ button.theme-toggle {
 
 button.theme-toggle:hover { border-color: var(--border-hi); color: var(--fg); }
 
-.theme-toggle svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
+.theme-toggle svg { width: 18px; height: 18px; }

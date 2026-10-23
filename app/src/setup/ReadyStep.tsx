@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ArrowRight, CircleCheck, Layers, Repeat } from "lucide-react";
 import { api } from "../engine";
 import { StepShell } from "../ui/StepShell";
 import type { StepPosition } from "./flow";
@@ -8,7 +9,7 @@ type Result = { status: "testing" } | { status: "ok" } | { status: "error"; mess
 type Props = {
   position: StepPosition;
   onDone: () => void;
-  /** Back to picking another model; only offered for API providers. */
+  /** Back to picking another model. */
   onChooseModel?: () => void;
   /** Back to choosing between running privately and an API key. */
   onChangeProvider: () => void;
@@ -66,13 +67,23 @@ export function ReadyStep({ position, onDone, onChooseModel, onChangeProvider }:
   }
   return (
     <StepShell step={position} title="You're all set" lede="Folio can talk to its AI. Let's get started.">
-      <svg className="check-mark" viewBox="0 0 56 56" aria-hidden="true">
-        <circle cx="28" cy="28" r="26" />
-        <path d="M17 29l8 8 14-17" />
-      </svg>
+      <span className="check-mark" aria-hidden="true">
+        <CircleCheck />
+      </span>
       <button type="button" className="primary" onClick={onDone}>
         Open Folio
+        <ArrowRight aria-hidden="true" />
       </button>
+      <div className="quiet-links">
+        {onChooseModel && (
+          <button type="button" onClick={onChooseModel}>
+            <Layers aria-hidden="true" /> Choose a different model
+          </button>
+        )}
+        <button type="button" onClick={onChangeProvider}>
+          <Repeat aria-hidden="true" /> Change how Folio's AI runs
+        </button>
+      </div>
     </StepShell>
   );
 }

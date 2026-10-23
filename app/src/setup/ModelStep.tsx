@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
+import { Cpu, Download, HardDrive, MemoryStick } from "lucide-react";
 import { api } from "../engine";
 import { Badge } from "../ui/Badge";
 import { FitBar } from "../ui/FitBar";
@@ -116,17 +117,23 @@ export function ModelStep({ position, onDone, onUseApiKey }: Props) {
     >
       <div className="specs">
         <div className="spec">
-          <div className="k">Memory</div>
+          <div className="k">
+            <MemoryStick aria-hidden="true" /> Memory
+          </div>
           <div className="v">{device.total_ram_gb} GB</div>
           <div className="s">≈{device.usable_gb} GB usable for AI</div>
         </div>
         <div className="spec">
-          <div className="k">Chip</div>
+          <div className="k">
+            <Cpu aria-hidden="true" /> Chip
+          </div>
           <div className="v">{device.chip_label}</div>
           <div className="s">{device.chip_note}</div>
         </div>
         <div className="spec">
-          <div className="k">Free disk</div>
+          <div className="k">
+            <HardDrive aria-hidden="true" /> Free disk
+          </div>
           <div className="v">{device.free_disk_gb} GB</div>
           <div className="s">{diskShort ? "Not enough for every option" : "Plenty for any option"}</div>
         </div>
@@ -186,7 +193,10 @@ export function ModelStep({ position, onDone, onUseApiKey }: Props) {
       <button
         type="button"
         className={`cta${picked?.fit === "no" ? " danger" : ""}`}
-        disabled={!picked || busy || blocked !== null} onClick={onCta}>
+        disabled={!picked || busy || blocked !== null}
+        onClick={onCta}
+      >
+        <Download aria-hidden="true" />
         {label}
       </button>
       <p className="sub">

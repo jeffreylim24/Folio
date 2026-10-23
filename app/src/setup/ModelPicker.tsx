@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
+import { ChevronDown } from "lucide-react";
 import { Badge } from "../ui/Badge";
 import { FitBar } from "../ui/FitBar";
 import { badgeFor } from "./modelTypes";
@@ -119,9 +120,7 @@ export function ModelPicker({ models, selected, usableGb, recommendedTag, onSele
           ) : (
             <span className="ph">Let me pick my own model</span>
           )}
-          <span className="caret" aria-hidden="true">
-            ▾
-          </span>
+          <ChevronDown className="caret" aria-hidden="true" />
         </button>
         <div
           className="list"

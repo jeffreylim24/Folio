@@ -27,6 +27,20 @@ describe("ReadyStep", () => {
     expect(onDone).toHaveBeenCalled();
   });
 
+  it("offers a different model or a different setup after success too", async () => {
+    stubFetch({ "POST /setup/test": { body: { reply: "ready" } } });
+    const onChooseModel = vi.fn();
+    const onChangeProvider = vi.fn();
+    render(
+      <ReadyStep position={POSITION} onDone={() => {}} onChooseModel={onChooseModel} onChangeProvider={onChangeProvider} />,
+    );
+    await screen.findByText("You're all set");
+    await userEvent.click(screen.getByRole("button", { name: "Choose a different model" }));
+    expect(onChooseModel).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole("button", { name: "Change how Folio's AI runs" }));
+    expect(onChangeProvider).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the error and retries", async () => {
     let fail = true;
     stubFetch({

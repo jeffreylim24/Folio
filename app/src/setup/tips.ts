@@ -1,6 +1,6 @@
 // Advice only. No statistics, no claims about what recruiters or employers do.
 export const TIPS: string[] = [
-  "This one's a big download. Good time to grab a coffee ☕",
+  "This one's a big download. Good time to grab a coffee.",
   "Hang tight, captain. The model's on its way.",
   "Your AI model is moving in. It's bringing a lot of boxes.",
   "Good things come to those who wait. Great resumes come to those who also proofread.",
