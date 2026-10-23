@@ -7,7 +7,7 @@ import { StepShell } from "../ui/StepShell";
 import type { StepPosition } from "./flow";
 import { LowSpecDialog } from "./LowSpecDialog";
 import { ModelPicker } from "./ModelPicker";
-import { FIT_LABELS, TIER_NAMES } from "./modelTypes";
+import { badgeFor, TIER_NAMES } from "./modelTypes";
 import type { Advice, ModelOption } from "./modelTypes";
 
 function messageOf(e: unknown): string {
@@ -24,14 +24,15 @@ export function ModelStep({ position, onDone, onUseApiKey }: Props) {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (keep?: Choice | null) => {
     setAdvice(null);
     setError(null);
     try {
       const a = await api<Advice>("/setup/hardware");
       setAdvice(a);
       const onCard = a.tiers.some((t) => t.tag === a.recommended);
-      setChoice(a.recommended ? { tag: a.recommended, via: onCard ? "card" : "picker" } : null);
+      const kept = keep && [...a.tiers, ...a.models].some((m) => m.tag === keep.tag) ? keep : null;
+      setChoice(kept ?? (a.recommended ? { tag: a.recommended, via: onCard ? "card" : "picker" } : null));
     } catch (e) {
       setError(messageOf(e));
     }
@@ -149,11 +150,7 @@ export function ModelStep({ position, onDone, onUseApiKey }: Props) {
               <div className="row">
                 <span className="tname">{t.tier ? TIER_NAMES[t.tier] : t.name}</span>
                 <span className="tag">{t.name}</span>
-                {recommended ? (
-                  <Badge kind="rec">Recommended for you</Badge>
-                ) : (
-                  <Badge kind={t.fit === "ok" ? "easy" : t.fit}>{FIT_LABELS[t.fit]}</Badge>
-                )}
+                <Badge kind={badgeFor(t.fit, recommended).kind}>{badgeFor(t.fit, recommended).label}</Badge>
               </div>
               <div className="meta">
                 {t.download_gb} GB download · about {t.est_minutes} min · needs ~{t.needed_gb} GB memory
@@ -169,6 +166,7 @@ export function ModelStep({ position, onDone, onUseApiKey }: Props) {
         models={models}
         selected={choice?.via === "picker" ? choice.tag : null}
         usableGb={device.usable_gb}
+        recommendedTag={advice.recommended}
         onSelect={(tag) => setChoice({ tag, via: "picker" })}
       />
 
@@ -178,13 +176,18 @@ export function ModelStep({ position, onDone, onUseApiKey }: Props) {
         </p>
       )}
       {blocked !== null && (
-        <p className="warning">Free up {blocked} GB of disk space to download this one.</p>
+        <p className="warning">
+          Free up {blocked} GB of disk space to download this one.{" "}
+          <button type="button" className="linklike" onClick={() => void load(choice)}>
+            Check again
+          </button>
+        </p>
       )}
       <button type="button" className="cta" disabled={!picked || busy || blocked !== null} onClick={onCta}>
         {label}
       </button>
       <p className="sub">
-        You can change this later in Settings. Prefer not to run AI on your computer?{" "}
+        Prefer not to run AI on your computer?{" "}
         <button type="button" className="linklike" onClick={onUseApiKey}>
           Use an API key instead
         </button>

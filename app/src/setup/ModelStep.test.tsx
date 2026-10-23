@@ -226,6 +226,57 @@ describe("ModelStep", () => {
     expect((screen.getByRole("button", { name: /^Download Small/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("disk short offers Check again, which keeps the choice once space is free", async () => {
+    const short = { ...BEST, fit: "ok" as const, disk_short_gb: 1.5 };
+    const freed = { ...BEST, fit: "ok" as const };
+    let calls = 0;
+    stubFetch({
+      "GET /setup/hardware": () =>
+        ++calls === 1
+          ? advice({ tiers: [SMALL, BALANCED, short], models: [SMALL, BALANCED, short] })
+          : advice({ tiers: [SMALL, BALANCED, freed], models: [SMALL, BALANCED, freed] }),
+    });
+    render(<ModelStep position={POSITION} onDone={() => {}} onUseApiKey={() => {}} />);
+    await userEvent.click((await screen.findByText("qwen3.8:27b")).closest("[role=radio]") as HTMLElement);
+    expect((screen.getByRole("button", { name: /^Download Best/ }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "Check again" }));
+    const btn = (await screen.findByRole("button", { name: /^Download Best/ })) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    expect(screen.queryByText(/Free up/)).toBeNull();
+  });
+
+  it("reason disk explains how much to free and can check again", async () => {
+    const short = { ...BALANCED, disk_short_gb: 2.5 };
+    setup(
+      advice({
+        reason: "disk",
+        message: "Free up 2.5 GB to download qwen3.5:9b.",
+        tiers: [SMALL, short, BEST],
+        models: [SMALL, short, BEST],
+      }),
+    );
+    expect(await screen.findByText("Free up 2.5 GB to download qwen3.5:9b.")).toBeTruthy();
+    expect(screen.getByText(/Free up 2.5 GB of disk space/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: /^Download Balanced/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Check again" })).toBeTruthy();
+  });
+
+  it("only the recommended model gets the Recommended badge, in cards and info card", async () => {
+    setup();
+    const small = (await screen.findByText("qwen3.5:4b")).closest("[role=radio]") as HTMLElement;
+    expect(within(small).getByText("Fits easily").className).toContain("easy");
+    expect(screen.getAllByText("Recommended for you")).toHaveLength(1);
+    expect(screen.queryByText(/change this later in Settings/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /Let me pick my own model/ }));
+    await userEvent.click(screen.getByRole("option", { name: /gemma4:12b/ }));
+    const badge = within(document.querySelector(".info") as HTMLElement).getByText("Fits easily");
+    expect(badge.className).toContain("easy");
+    await userEvent.click(document.querySelector(".combo-btn") as HTMLElement);
+    await userEvent.click(screen.getByRole("option", { name: /qwen3.5:9b/ }));
+    const info = document.querySelector(".info") as HTMLElement;
+    expect(within(info).getByText("Recommended for you").className).toContain("rec");
+  });
+
   it("shows the engine's message when the download is refused", async () => {
     stubFetch({
       "GET /setup/hardware": advice(),

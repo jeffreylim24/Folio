@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Badge } from "../ui/Badge";
 import { FitBar } from "../ui/FitBar";
-import { FIT_LABELS } from "./modelTypes";
+import { badgeFor } from "./modelTypes";
 import type { Fit, ModelOption } from "./modelTypes";
 
 const GROUPS: { fit: Fit; title: string }[] = [
@@ -10,23 +10,24 @@ const GROUPS: { fit: Fit; title: string }[] = [
   { fit: "tight", title: "Might be slow" },
   { fit: "no", title: "Too big for your device" },
 ];
-const BADGE: Record<Fit, "rec" | "tight" | "no"> = { ok: "rec", tight: "tight", no: "no" };
 
 type Props = {
   models: ModelOption[];
   /** Tag of the model picked here, or null when the choice (if any) is a card. */
   selected: string | null;
   usableGb: number;
+  recommendedTag: string | null;
   onSelect: (tag: string) => void;
 };
 
-export function ModelPicker({ models, selected, usableGb, onSelect }: Props) {
+export function ModelPicker({ models, selected, usableGb, recommendedTag, onSelect }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const idBase = useId();
   const current = models.find((m) => m.tag === selected) ?? null;
+  const badge = current ? badgeFor(current.fit, current.tag === recommendedTag) : null;
 
   useEffect(() => {
     if (!open) return;
@@ -166,7 +167,7 @@ export function ModelPicker({ models, selected, usableGb, onSelect }: Props) {
           <div className="row">
             <span className="tname">{current.name}</span>
             <span className="meta">by {current.maker}</span>
-            <Badge kind={BADGE[current.fit]}>{FIT_LABELS[current.fit]}</Badge>
+            {badge && <Badge kind={badge.kind}>{badge.label}</Badge>}
           </div>
           <div className="grid">
             <div className="cell">

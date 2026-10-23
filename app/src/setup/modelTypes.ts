@@ -40,6 +40,14 @@ export const TIER_NAMES: Record<Tier, string> = {
   best: "Best quality",
 };
 
+export type BadgeKind = "rec" | "easy" | "tight" | "no";
+
+/** One mapping for every badge: only the recommended model gets "rec". */
+export function badgeFor(fit: Fit, recommended: boolean): { kind: BadgeKind; label: string } {
+  if (recommended) return { kind: "rec", label: "Recommended for you" };
+  return { kind: fit === "ok" ? "easy" : fit, label: FIT_LABELS[fit] };
+}
+
 export const FIT_LABELS: Record<Fit, string> = {
   ok: "Fits easily",
   tight: "Might be slow",
