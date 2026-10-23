@@ -4,8 +4,11 @@ import os
 import socket
 import sys
 import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 
+import psutil
 import uvicorn
 
 from .server import create_app
@@ -20,7 +23,24 @@ def _exit_when_stdin_closes() -> None:
     os._exit(0)
 
 
-def main(argv: list[str] | None = None) -> int:
+def watch_parent(
+    pid: int,
+    exists: Callable[[int], bool] = psutil.pid_exists,
+    exit_fn: Callable[[], None] = lambda: os._exit(0),
+    interval_s: float = 2.0,
+    max_checks: int | None = None,
+) -> None:
+    """Call exit_fn once the parent process is gone."""
+    checks = 0
+    while max_checks is None or checks < max_checks:
+        if not exists(pid):
+            exit_fn()
+            return
+        checks += 1
+        time.sleep(interval_s)
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="folio-engine")
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument(
@@ -28,7 +48,16 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="exit when stdin closes (the parent app died or released us)",
     )
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--parent-pid",
+        type=int,
+        help="exit when this process no longer exists",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     token = os.environ.get("FOLIO_ENGINE_TOKEN")
     if not token:
@@ -46,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.exit_on_stdin_close:
         threading.Thread(target=_exit_when_stdin_closes, daemon=True).start()
+
+    if args.parent_pid is not None:
+        threading.Thread(
+            target=watch_parent, args=(args.parent_pid,), daemon=True
+        ).start()
 
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
     asyncio.run(server.serve(sockets=[sock]))

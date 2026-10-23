@@ -123,3 +123,10 @@ def test_chat_omits_unset():
 
     body = _json.loads(route.calls[0].request.content)
     assert "options" not in body and "think" not in body
+
+
+def test_bad_ollama_host_port_falls_back(monkeypatch):
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    assert OllamaClient("http://localhost:abc")._base_url == "http://127.0.0.1:11434"
+    monkeypatch.setenv("OLLAMA_HOST", "localhost:abc")
+    assert OllamaClient()._base_url == "http://127.0.0.1:11434"

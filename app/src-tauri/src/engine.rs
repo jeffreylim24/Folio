@@ -146,7 +146,13 @@ impl EngineState {
             .sidecar("folio-engine")
             .map_err(|e| e.to_string())?
             .env("FOLIO_ENGINE_TOKEN", &token)
-            .args(["--exit-on-stdin-close".to_string(), "--data-dir".to_string(), data_dir.to_string_lossy().into_owned()])
+            .args([
+                "--exit-on-stdin-close".to_string(),
+                "--data-dir".to_string(),
+                data_dir.to_string_lossy().into_owned(),
+                "--parent-pid".to_string(),
+                std::process::id().to_string(),
+            ])
             .spawn()
             .map_err(|e| e.to_string())?;
         *self.child.lock().unwrap() = Some(child);

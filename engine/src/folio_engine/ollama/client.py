@@ -50,7 +50,10 @@ class PullProgress:
 class OllamaClient:
     def __init__(self, base_url: str | None = None):
         url = base_url or os.environ.get("OLLAMA_HOST") or DEFAULT_URL
-        self._base_url = normalize_host(url)
+        try:
+            self._base_url = normalize_host(url)
+        except ValueError:  # e.g. a non-numeric port in OLLAMA_HOST
+            self._base_url = normalize_host(DEFAULT_URL)
         self._http = httpx.Client(base_url=self._base_url, timeout=30)
 
     def version(self) -> str | None:

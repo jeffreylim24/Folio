@@ -23,3 +23,29 @@ def test_ready_line_is_connectable_and_exits_on_stdin_close(tmp_path):
     finally:
         if proc.poll() is None:
             proc.kill()
+
+
+def test_watch_parent_exits_when_parent_gone():
+    from folio_engine.__main__ import watch_parent
+
+    answers = iter([True, True, False])
+    calls = []
+    watch_parent(1234, exists=lambda pid: next(answers), exit_fn=lambda: calls.append(1), interval_s=0)
+    assert calls == [1]
+
+
+def test_watch_parent_keeps_running():
+    from folio_engine.__main__ import watch_parent
+
+    calls = []
+    watch_parent(
+        1234, exists=lambda pid: True, exit_fn=lambda: calls.append(1), interval_s=0, max_checks=3
+    )
+    assert calls == []
+
+
+def test_main_accepts_parent_pid():
+    from folio_engine.__main__ import build_parser
+
+    args = build_parser().parse_args(["--data-dir", "x", "--parent-pid", "42"])
+    assert args.parent_pid == 42
