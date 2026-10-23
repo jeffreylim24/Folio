@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { SetupState } from "../engine";
-import { nextStep } from "./flow";
+import { nextStep, stepPosition } from "./flow";
 
-const running = { installed: true, running: true, version: "0.1", appPath: null };
-const idle = { state: "idle", model: null, completedBytes: 0, totalBytes: 0, error: null } as const;
+const running = {
+  installed: true,
+  running: true,
+  version: "0.1",
+  appPath: null,
+  outdated: false,
+  updatable: false,
+};
+const idle = { state: "idle", model: null, completedBytes: 0, totalBytes: 0, error: null, resuming: false } as const;
 
 function make(over: Omit<Partial<SetupState>, "settings"> & { settings?: Partial<SetupState["settings"]> } = {}): SetupState {
   const { settings, ...rest } = over;
@@ -71,5 +78,26 @@ describe("nextStep", () => {
     // Relaunch after picking "Run privately" but before Ollama is set up.
     const missing = { ...running, installed: false, running: false };
     expect(nextStep(make({ settings: { provider: "ollama" }, ollama: missing }))).toBe("ollama");
+  });
+});
+
+describe("outdated Ollama", () => {
+  it("outdated Ollama → ollama step", () => {
+    const s = make({
+      settings: { provider: "ollama", model: "qwen3:8b" },
+      ollama: { ...running, outdated: true },
+    });
+    expect(nextStep(s)).toBe("ollama");
+  });
+});
+
+describe("stepPosition", () => {
+  it("numbers the local path", () => {
+    expect(stepPosition("model", false)).toEqual({ n: 3, total: 5, label: "Choose a model" });
+    expect(stepPosition("provider", false)).toEqual({ n: 1, total: 5, label: "How Folio's AI runs" });
+  });
+  it("numbers the API path", () => {
+    expect(stepPosition("ready", true)).toEqual({ n: 2, total: 2, label: "Finish" });
+    expect(stepPosition("api-key", true)).toEqual({ n: 1, total: 2, label: "How Folio's AI runs" });
   });
 });

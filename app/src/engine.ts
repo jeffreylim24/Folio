@@ -19,14 +19,17 @@ export type OllamaStatus = {
   running: boolean;
   version: string | null;
   appPath: string | null;
+  outdated: boolean;
+  updatable: boolean;
 };
 
 export type PullStatus = {
-  state: "idle" | "downloading" | "done" | "error";
+  state: "idle" | "downloading" | "stalled" | "done" | "error";
   model: string | null;
   completedBytes: number;
   totalBytes: number;
   error: string | null;
+  resuming: boolean;
 };
 
 export type SetupState = {
@@ -91,21 +94,48 @@ async function toEngineError(res: Response): Promise<EngineError> {
   return new EngineError("other", GENERIC_MESSAGE);
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+const TIMEOUT_MESSAGE = "Folio's engine took too long to answer. Please try again.";
+
+export async function api<T>(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = 15_000,
+): Promise<T> {
   const { port, token } = await getEngineInfo();
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);
   if (init.body !== undefined && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  let res: Response;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   try {
-    res = await fetch(`http://127.0.0.1:${port}${path}`, { ...init, headers });
-  } catch {
-    throw new EngineError("network", NETWORK_MESSAGE);
+    let res: Response;
+    try {
+      res = await fetch(`http://127.0.0.1:${port}${path}`, {
+        ...init,
+        headers,
+        signal: controller.signal,
+      });
+    } catch {
+      throw timedOut
+        ? new EngineError("timeout", TIMEOUT_MESSAGE)
+        : new EngineError("network", NETWORK_MESSAGE);
+    }
+    if (!res.ok) throw await toEngineError(res);
+    return (await res.json()) as T;
+  } catch (e) {
+    if (timedOut && !(e instanceof EngineError && e.kind === "timeout")) {
+      throw new EngineError("timeout", TIMEOUT_MESSAGE);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  if (!res.ok) throw await toEngineError(res);
-  return (await res.json()) as T;
 }
 
 export function jsonBody(value: unknown): RequestInit {
@@ -125,6 +155,8 @@ type RawState = {
     running: boolean;
     version: string | null;
     app_path: string | null;
+    outdated: boolean;
+    updatable: boolean;
   } | null;
   pull: {
     state: PullStatus["state"];
@@ -132,6 +164,7 @@ type RawState = {
     completed_bytes: number;
     total_bytes: number;
     error: string | null;
+    resuming: boolean;
   };
 };
 
@@ -150,6 +183,8 @@ export async function getSetupState(): Promise<SetupState> {
       running: raw.ollama.running,
       version: raw.ollama.version,
       appPath: raw.ollama.app_path,
+      outdated: raw.ollama.outdated,
+      updatable: raw.ollama.updatable,
     },
     pull: {
       state: raw.pull.state,
@@ -157,6 +192,7 @@ export async function getSetupState(): Promise<SetupState> {
       completedBytes: raw.pull.completed_bytes,
       totalBytes: raw.pull.total_bytes,
       error: raw.pull.error,
+      resuming: raw.pull.resuming,
     },
   };
 }

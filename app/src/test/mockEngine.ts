@@ -9,13 +9,14 @@ export const IDLE_PULL = {
   completed_bytes: 0,
   total_bytes: 0,
   error: null,
+  resuming: false,
 };
 
 export function rawState(over: Record<string, unknown> = {}) {
   return {
     settings: { provider: null, model: null, base_url: null, setup_complete: false },
     has_api_key: false,
-    ollama: { installed: true, running: true, version: "0.1", app_path: null },
+    ollama: { installed: true, running: true, version: "0.1", app_path: null, outdated: false, updatable: false },
     pull: IDLE_PULL,
     ...over,
   };

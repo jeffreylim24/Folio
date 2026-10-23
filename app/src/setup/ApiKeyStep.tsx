@@ -36,6 +36,7 @@ export function ApiKeyStep({ disabled = false, onDone }: Props) {
           api_key: apiKey,
           base_url: provider === "openai_compatible" ? baseUrl : null,
         }),
+        30_000,
       );
       setModels(res.models);
     } catch (err) {

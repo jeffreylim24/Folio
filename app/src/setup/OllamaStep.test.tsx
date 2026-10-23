@@ -5,6 +5,8 @@ import { resetEngineCache } from "../engine";
 import { stubFetch } from "../test/mockEngine";
 import { OllamaStep } from "./OllamaStep";
 
+const POSITION = { n: 1, total: 5, label: "Test" };
+
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 const status = (over: Record<string, unknown>) => ({
@@ -36,7 +38,7 @@ describe("OllamaStep", () => {
       "POST /setup/ollama/start": { body: { running: true } },
     });
     const onDone = vi.fn();
-    render(<OllamaStep onUseApiKey={() => {}} onDone={onDone} />);
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={onDone} />);
     await settle();
     expect(calls(fetchMock, "POST /setup/ollama/start")).toHaveLength(1);
     await settle();
@@ -55,7 +57,7 @@ describe("OllamaStep", () => {
       if (init?.method === "POST") await gate;
       return inner(url, init);
     });
-    render(<OllamaStep onUseApiKey={() => {}} onDone={() => {}} />);
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     expect(screen.getByText("Starting Ollama…")).toBeTruthy();
     release();
@@ -69,7 +71,7 @@ describe("OllamaStep", () => {
       "POST /setup/ollama/start": { body: { running: false } },
     });
     const onDone = vi.fn();
-    render(<OllamaStep onUseApiKey={() => {}} onDone={onDone} />);
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={onDone} />);
     await settle();
     expect(
       screen.getByText(
@@ -97,7 +99,7 @@ describe("OllamaStep", () => {
       },
     });
     const onDone = vi.fn();
-    render(<OllamaStep onUseApiKey={() => {}} onDone={onDone} />);
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={onDone} />);
     await settle();
     expect(screen.getByText(/the free app that runs AI models privately on your computer/)).toBeTruthy();
     await click("Install Ollama");
@@ -121,7 +123,7 @@ describe("OllamaStep", () => {
           ? { body: { state: "error", progress: 0, message: "The download failed." } }
           : { body: { state: "downloading", progress: 0.1, message: null } },
     });
-    render(<OllamaStep onUseApiKey={() => {}} onDone={() => {}} />);
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     await click("Install Ollama");
     await settle(1000);
@@ -139,7 +141,7 @@ describe("OllamaStep", () => {
       "POST /setup/ollama/install": { status: 202, body: { started: true } },
       "GET /setup/ollama/install": { body: { state: "downloading", progress: 0.1, message: null } },
     });
-    const { unmount } = render(<OllamaStep onUseApiKey={() => {}} onDone={() => {}} />);
+    const { unmount } = render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     await click("Install Ollama");
     await settle(1000);
@@ -160,7 +162,7 @@ describe("OllamaStep", () => {
       throw new Error(`unexpected ${key}`);
     });
     const onDone = vi.fn();
-    render(<OllamaStep onUseApiKey={() => {}} onDone={onDone} />);
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={onDone} />);
     await settle();
     await click("Install Ollama");
     await settle(5000);
@@ -182,7 +184,7 @@ describe("OllamaStep", () => {
       if (key === "GET /setup/ollama/install") return new Promise<Response>((r) => polls.push(r));
       throw new Error(`unexpected ${key}`);
     });
-    render(<OllamaStep onUseApiKey={() => {}} onDone={() => {}} />);
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     await click("Install Ollama");
     await settle(1000); // a poll goes out while the install request is open
@@ -196,7 +198,7 @@ describe("OllamaStep", () => {
   it("offers an API key instead while Ollama is not installed or didn't start", async () => {
     stubFetch({ "GET /setup/ollama": { body: status({ installed: false }) } });
     const onUseApiKey = vi.fn();
-    const { unmount } = render(<OllamaStep onUseApiKey={onUseApiKey} onDone={() => {}} />);
+    const { unmount } = render(<OllamaStep position={POSITION} onUseApiKey={onUseApiKey} onDone={() => {}} />);
     await settle();
     await click("Use an API key instead");
     expect(onUseApiKey).toHaveBeenCalledTimes(1);
@@ -206,7 +208,7 @@ describe("OllamaStep", () => {
       "GET /setup/ollama": { body: status({}) },
       "POST /setup/ollama/start": { body: { running: false } },
     });
-    render(<OllamaStep onUseApiKey={onUseApiKey} onDone={() => {}} />);
+    render(<OllamaStep position={POSITION} onUseApiKey={onUseApiKey} onDone={() => {}} />);
     await settle();
     await click("Use an API key instead");
     expect(onUseApiKey).toHaveBeenCalledTimes(2);
@@ -220,7 +222,7 @@ describe("OllamaStep", () => {
       "GET /setup/ollama": { body: status({}) },
       "POST /setup/ollama/start": { body: { running: false } },
     });
-    render(<OllamaStep onUseApiKey={() => {}} onDone={() => {}} />);
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     expect(
       screen.getByText(

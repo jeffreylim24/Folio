@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { api } from "../engine";
+import { StepShell } from "../ui/StepShell";
+import type { StepPosition } from "./flow";
 
 type Result = { status: "testing" } | { status: "ok" } | { status: "error"; message: string };
 
 type Props = {
+  position: StepPosition;
   onDone: () => void;
   /** Back to picking another model; only offered for API providers. */
   onChooseModel?: () => void;
@@ -11,14 +14,14 @@ type Props = {
   onChangeProvider: () => void;
 };
 
-export function ReadyStep({ onDone, onChooseModel, onChangeProvider }: Props) {
+export function ReadyStep({ position, onDone, onChooseModel, onChangeProvider }: Props) {
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<Result>({ status: "testing" });
 
   useEffect(() => {
     let cancelled = false;
     setResult({ status: "testing" });
-    api("/setup/test", { method: "POST" })
+    api("/setup/test", { method: "POST" }, 180_000)
       .then(() => !cancelled && setResult({ status: "ok" }))
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -35,16 +38,15 @@ export function ReadyStep({ onDone, onChooseModel, onChangeProvider }: Props) {
 
   if (result.status === "testing") {
     return (
-      <section className="stack" aria-live="polite">
-        <h1>Almost there</h1>
+      <StepShell step={position} title="Almost there" live="polite">
+        <div className="spinner" aria-hidden="true" />
         <p>Making sure everything works...</p>
-      </section>
+      </StepShell>
     );
   }
   if (result.status === "error") {
     return (
-      <section className="stack">
-        <h1>That didn't work</h1>
+      <StepShell step={position} title="That didn't work">
         <p role="alert" className="error">
           {result.message}
         </p>
@@ -59,17 +61,19 @@ export function ReadyStep({ onDone, onChooseModel, onChangeProvider }: Props) {
         <button type="button" onClick={onChangeProvider}>
           Change how Folio's AI runs
         </button>
-      </section>
+      </StepShell>
     );
   }
   return (
-    <section className="stack">
-      <h1>You're all set</h1>
-      <p>Folio can talk to its AI. Let's get started.</p>
+    <StepShell step={position} title="You're all set" lede="Folio can talk to its AI. Let's get started.">
+      <svg className="check-mark" viewBox="0 0 56 56" aria-hidden="true">
+        <circle cx="28" cy="28" r="26" />
+        <path d="M17 29l8 8 14-17" />
+      </svg>
       <button type="button" className="primary" onClick={onDone}>
         Open Folio
       </button>
-    </section>
+    </StepShell>
   );
 }
 

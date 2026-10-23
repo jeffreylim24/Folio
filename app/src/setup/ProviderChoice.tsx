@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { StepShell } from "../ui/StepShell";
 import { ApiKeyStep } from "./ApiKeyStep";
+import type { StepPosition } from "./flow";
 
 type Props = {
+  position: StepPosition;
   initial?: "api";
   onChooseLocal: () => void;
   onDone: () => void;
@@ -10,14 +13,16 @@ type Props = {
 export const API_WARNING =
   "Using your own API key sends your resume and knowledge base to the provider you choose. Your data leaves your device and is handled under that provider's terms. Use at your own risk.";
 
-export function ProviderChoice({ initial, onChooseLocal, onDone }: Props) {
+export function ProviderChoice({ position, initial, onChooseLocal, onDone }: Props) {
   const [showApi, setShowApi] = useState(initial === "api");
   const [understood, setUnderstood] = useState(false);
 
   return (
-    <section className="stack">
-      <h1>How should Folio's AI run?</h1>
-      <p>You can only pick one for now. Both work the same once set up.</p>
+    <StepShell
+      step={position}
+      title="How should Folio's AI run?"
+      lede="You can only pick one for now. Both work the same once set up."
+    >
       <div className="choices">
         <button type="button" className="choice" onClick={onChooseLocal}>
           <strong>Run privately on this computer (recommended)</strong>
@@ -47,6 +52,6 @@ export function ProviderChoice({ initial, onChooseLocal, onDone }: Props) {
           <ApiKeyStep disabled={!understood} onDone={onDone} />
         </div>
       )}
-    </section>
+    </StepShell>
   );
 }

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type OllamaStatus } from "../engine";
+import { StepShell } from "../ui/StepShell";
+import type { StepPosition } from "./flow";
 import { isWindows } from "../platform";
 import { usePoll } from "./usePoll";
 
@@ -28,9 +30,9 @@ function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : "Something went wrong. Please try again.";
 }
 
-type Props = { onDone: () => void; onUseApiKey: () => void };
+type Props = { position: StepPosition; onDone: () => void; onUseApiKey: () => void };
 
-export function OllamaStep({ onDone, onUseApiKey }: Props) {
+export function OllamaStep({ position, onDone, onUseApiKey }: Props) {
   const [view, setView] = useState<View>({ kind: "checking" });
   const alive = useRef(true);
   const finished = useRef(false);
@@ -54,7 +56,11 @@ export function OllamaStep({ onDone, onUseApiKey }: Props) {
       if (!status.installed) return setView({ kind: "not-installed" });
       if (status.running) return finish();
       setView({ kind: "starting" });
-      const started = await api<{ running: boolean }>("/setup/ollama/start", { method: "POST" });
+      const started = await api<{ running: boolean }>(
+        "/setup/ollama/start",
+        { method: "POST" },
+        45_000,
+      );
       if (!alive.current) return;
       if (started.running) finish();
       else setView({ kind: "didnt-start" });
@@ -105,16 +111,14 @@ export function OllamaStep({ onDone, onUseApiKey }: Props) {
 
   if (view.kind === "checking" || view.kind === "starting") {
     return (
-      <section className="stack" aria-live="polite">
-        <h1>Setting up Ollama</h1>
+      <StepShell step={position} title="Setting up Ollama" live="polite">
         <p>{view.kind === "starting" ? "Starting Ollama…" : "Checking for Ollama…"}</p>
-      </section>
+      </StepShell>
     );
   }
   if (view.kind === "didnt-start") {
     return (
-      <section className="stack">
-        <h1>Setting up Ollama</h1>
+      <StepShell step={position} title="Setting up Ollama">
         <p role="alert" className="error">
           Ollama didn't start. Try opening it from{" "}
           {isWindows() ? "the Start menu" : "your Applications folder"}, then click Check again.
@@ -125,26 +129,24 @@ export function OllamaStep({ onDone, onUseApiKey }: Props) {
         <button type="button" onClick={onUseApiKey}>
           Use an API key instead
         </button>
-      </section>
+      </StepShell>
     );
   }
   if (view.kind === "installing") {
     const s = view.status;
     const percent = s ? Math.floor(s.progress * 100) : 0;
     return (
-      <section className="stack" aria-live="polite">
-        <h1>Installing Ollama</h1>
+      <StepShell step={position} title="Installing Ollama" live="polite">
         <p>
           {s && INSTALL_LABEL[s.state] ? INSTALL_LABEL[s.state] : "Getting started…"}
           {(!s || s.state === "downloading") && ` ${percent}%`}
         </p>
         <progress max={100} value={percent} />
-      </section>
+      </StepShell>
     );
   }
   return (
-    <section className="stack">
-      <h1>Install Ollama</h1>
+    <StepShell step={position} title="Install Ollama">
       <p>
         Ollama is the free app that runs AI models privately on your computer.
       </p>
@@ -159,6 +161,6 @@ export function OllamaStep({ onDone, onUseApiKey }: Props) {
       <button type="button" onClick={onUseApiKey}>
         Use an API key instead
       </button>
-    </section>
+    </StepShell>
   );
 }

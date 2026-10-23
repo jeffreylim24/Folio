@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, getSetupState, type SetupState } from "../engine";
 import { Home } from "../Home";
-import { API_PROVIDERS, nextStep, type Step } from "./flow";
+import { API_PROVIDERS, nextStep, stepPosition, type Step } from "./flow";
 import { DownloadStep } from "./DownloadStep";
 import { ModelStep } from "./ModelStep";
 import { OllamaStep } from "./OllamaStep";
@@ -30,7 +30,10 @@ export function SetupWizard({ onEngineProblem }: { onEngineProblem: (message: st
   if (!state) {
     return (
       <main className="page" aria-busy="true">
-        <p>Loading...</p>
+        <div className="card centered screen" role="status">
+          <div className="spinner" aria-hidden="true" />
+          <p>Loading...</p>
+        </div>
       </main>
     );
   }
@@ -56,29 +59,46 @@ export function SetupWizard({ onEngineProblem }: { onEngineProblem: (message: st
     typeof state.settings.provider === "string" &&
     API_PROVIDERS.includes(state.settings.provider);
 
+  const apiPath = step === "api-key" || usesApiKey;
+  const position = stepPosition(step, apiPath);
+
   return (
     <main className="page">
-      {step === "provider" && (
-        <ProviderChoice onChooseLocal={() => void chooseLocal()} onDone={apiDone} />
-      )}
-      {step === "api-key" && (
-        <ProviderChoice
-          initial="api"
-          onChooseLocal={() => void chooseLocal()}
-          onDone={apiDone}
-        />
-      )}
-      {step === "ollama" && <OllamaStep onDone={refresh} onUseApiKey={useApiKey} />}
-      {step === "model" && <ModelStep onDone={refresh} onUseApiKey={useApiKey} />}
-      {step === "download" && <DownloadStep onDone={refresh} onUseApiKey={useApiKey} />}
-      {step === "ready" && (
-        <ReadyStep
-          onDone={refresh}
-          onChooseModel={usesApiKey ? useApiKey : undefined}
-          onChangeProvider={changeProvider}
-        />
-      )}
-      {step === "home" && <Home />}
+      <div key={step} className="screen">
+        {step === "provider" && (
+          <ProviderChoice
+            position={position}
+            onChooseLocal={() => void chooseLocal()}
+            onDone={apiDone}
+          />
+        )}
+        {step === "api-key" && (
+          <ProviderChoice
+            position={position}
+            initial="api"
+            onChooseLocal={() => void chooseLocal()}
+            onDone={apiDone}
+          />
+        )}
+        {step === "ollama" && (
+          <OllamaStep position={position} onDone={refresh} onUseApiKey={useApiKey} />
+        )}
+        {step === "model" && (
+          <ModelStep position={position} onDone={refresh} onUseApiKey={useApiKey} />
+        )}
+        {step === "download" && (
+          <DownloadStep position={position} onDone={refresh} onUseApiKey={useApiKey} />
+        )}
+        {step === "ready" && (
+          <ReadyStep
+            position={position}
+            onDone={refresh}
+            onChooseModel={usesApiKey ? useApiKey : undefined}
+            onChangeProvider={changeProvider}
+          />
+        )}
+        {step === "home" && <Home />}
+      </div>
     </main>
   );
 }

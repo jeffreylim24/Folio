@@ -43,19 +43,26 @@ export default function App() {
   if (status.kind === "starting") {
     return (
       <main className="page" aria-busy="true">
-        <p>Starting Folio...</p>
+        <div className="card centered screen" role="status">
+          <div className="spinner" aria-hidden="true" />
+          <p>Starting Folio...</p>
+        </div>
       </main>
     );
   }
   if (status.kind === "error") {
     return (
-      <main className="page stack">
-        <h1>Folio's engine didn't start</h1>
-        <p>Folio needs its background engine to work. Trying again often fixes this.</p>
-        {status.detail && <p className="detail">{status.detail}</p>}
-        <button type="button" className="primary" onClick={() => void retry()}>
-          Retry
-        </button>
+      <main className="page">
+        <div className="card screen">
+          <div className="stack">
+            <h1>Folio's engine didn't start</h1>
+            <p>Folio needs its background engine to work. Trying again often fixes this.</p>
+            {status.detail && <p className="detail">{status.detail}</p>}
+            <button type="button" className="primary" onClick={() => void retry()}>
+              Retry
+            </button>
+          </div>
+        </div>
       </main>
     );
   }

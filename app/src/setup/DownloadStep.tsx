@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../engine";
+import { StepShell } from "../ui/StepShell";
+import type { StepPosition } from "./flow";
 import { usePoll } from "./usePoll";
 
 type RawPull = {
@@ -13,9 +15,9 @@ function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : "Something went wrong. Please try again.";
 }
 
-type Props = { onDone: () => void; onUseApiKey: () => void };
+type Props = { position: StepPosition; onDone: () => void; onUseApiKey: () => void };
 
-export function DownloadStep({ onDone, onUseApiKey }: Props) {
+export function DownloadStep({ position, onDone, onUseApiKey }: Props) {
   const [pull, setPull] = useState<RawPull | null>(null);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
@@ -72,8 +74,7 @@ export function DownloadStep({ onDone, onUseApiKey }: Props) {
       : 0;
 
   return (
-    <section className="stack" aria-live="polite">
-      <h1>Downloading your AI model</h1>
+    <StepShell step={position} title="Downloading your AI model" live="polite">
       {failure ? (
         <>
           <p role="alert" className="error">
@@ -95,6 +96,6 @@ export function DownloadStep({ onDone, onUseApiKey }: Props) {
       <button type="button" onClick={onUseApiKey}>
         Use an API key instead
       </button>
-    </section>
+    </StepShell>
   );
 }

@@ -6,6 +6,8 @@ import { resetEngineCache } from "../engine";
 import { stubFetch } from "../test/mockEngine";
 import { ReadyStep } from "./ReadyStep";
 
+const POSITION = { n: 1, total: 5, label: "Test" };
+
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 beforeEach(() => {
@@ -18,7 +20,7 @@ describe("ReadyStep", () => {
   it("tests the connection and confirms success", async () => {
     const fetchMock = stubFetch({ "POST /setup/test": { body: { reply: "ready" } } });
     const onDone = vi.fn();
-    render(<ReadyStep onChangeProvider={() => {}} onDone={onDone} />);
+    render(<ReadyStep position={POSITION} onChangeProvider={() => {}} onDone={onDone} />);
     expect(await screen.findByText("You're all set")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await userEvent.click(screen.getByRole("button", { name: "Open Folio" }));
@@ -33,7 +35,7 @@ describe("ReadyStep", () => {
           ? { status: 400, body: { kind: "network", message: "Couldn't reach the provider." } }
           : { body: { reply: "ready" } },
     });
-    render(<ReadyStep onChangeProvider={() => {}} onDone={() => {}} />);
+    render(<ReadyStep position={POSITION} onChangeProvider={() => {}} onDone={() => {}} />);
     expect((await screen.findByRole("alert")).textContent).toBe("Couldn't reach the provider.");
     fail = false;
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -47,7 +49,7 @@ describe("ReadyStep", () => {
     const onChooseModel = vi.fn();
     const onChangeProvider = vi.fn();
     render(
-      <ReadyStep onDone={() => {}} onChooseModel={onChooseModel} onChangeProvider={onChangeProvider} />,
+      <ReadyStep position={POSITION} onDone={() => {}} onChooseModel={onChooseModel} onChangeProvider={onChangeProvider} />,
     );
     await screen.findByRole("alert");
     await userEvent.click(screen.getByRole("button", { name: "Choose a different model" }));
@@ -60,7 +62,7 @@ describe("ReadyStep", () => {
     stubFetch({
       "POST /setup/test": { status: 400, body: { kind: "network", message: "Couldn't reach Ollama." } },
     });
-    render(<ReadyStep onDone={() => {}} onChangeProvider={() => {}} />);
+    render(<ReadyStep position={POSITION} onDone={() => {}} onChangeProvider={() => {}} />);
     await screen.findByRole("alert");
     expect(screen.queryByRole("button", { name: "Choose a different model" })).toBeNull();
     expect(screen.getByRole("button", { name: "Change how Folio's AI runs" })).toBeTruthy();

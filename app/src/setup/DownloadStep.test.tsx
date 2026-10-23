@@ -5,6 +5,8 @@ import { resetEngineCache } from "../engine";
 import { stubFetch } from "../test/mockEngine";
 import { DownloadStep } from "./DownloadStep";
 
+const POSITION = { n: 1, total: 5, label: "Test" };
+
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 const pull = (state: string, completed: number, total: number, error: string | null = null) => ({
@@ -25,7 +27,7 @@ afterEach(() => vi.useRealTimers());
 describe("DownloadStep", () => {
   it("polls once a second and shows a floored percent", async () => {
     const fetchMock = stubFetch({ "GET /setup/pull": pull("downloading", 2, 3) });
-    render(<DownloadStep onUseApiKey={() => {}} onDone={() => {}} />);
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     expect(screen.getByText("66%")).toBeTruthy();
     expect(screen.getByText(/the download picks up where it left off/)).toBeTruthy();
@@ -38,7 +40,7 @@ describe("DownloadStep", () => {
 
   it("shows 0% when the total is not known yet", async () => {
     stubFetch({ "GET /setup/pull": pull("downloading", 0, 0) });
-    render(<DownloadStep onUseApiKey={() => {}} onDone={() => {}} />);
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     expect(screen.getByText("0%")).toBeTruthy();
   });
@@ -46,7 +48,7 @@ describe("DownloadStep", () => {
   it("continues when the download is done", async () => {
     stubFetch({ "GET /setup/pull": pull("done", 3, 3) });
     const onDone = vi.fn();
-    render(<DownloadStep onUseApiKey={() => {}} onDone={onDone} />);
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={onDone} />);
     await settle();
     expect(onDone).toHaveBeenCalledTimes(1);
   });
@@ -57,7 +59,7 @@ describe("DownloadStep", () => {
       "GET /setup/pull": () => (failing ? pull("error", 1, 3, "Not enough disk space.") : pull("downloading", 1, 3)),
       "POST /setup/pull/retry": { status: 202, body: { started: true } },
     });
-    render(<DownloadStep onUseApiKey={() => {}} onDone={() => {}} />);
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     expect(screen.getByRole("alert").textContent).toBe("Not enough disk space.");
     failing = false;
@@ -70,7 +72,7 @@ describe("DownloadStep", () => {
 
   it("stops polling on unmount", async () => {
     const fetchMock = stubFetch({ "GET /setup/pull": pull("downloading", 1, 3) });
-    const { unmount } = render(<DownloadStep onUseApiKey={() => {}} onDone={() => {}} />);
+    const { unmount } = render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     unmount();
     await settle(3000);
@@ -83,7 +85,7 @@ describe("DownloadStep", () => {
       calls.push(new URL(url).pathname);
       return new Promise<Response>(() => {});
     });
-    render(<DownloadStep onUseApiKey={() => {}} onDone={() => {}} />);
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle(5000);
     expect(calls.filter((c) => c === "/setup/pull")).toHaveLength(1);
   });
@@ -104,7 +106,7 @@ describe("DownloadStep", () => {
       if (gets === 1) return Promise.resolve(reply(pullBody("error", 1, "Old error")));
       return new Promise<Response>((resolve) => pending.push(resolve));
     });
-    render(<DownloadStep onUseApiKey={() => {}} onDone={() => {}} />);
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     expect(screen.getByRole("alert").textContent).toBe("Old error");
     await settle(1000); // tick: GET #2 stays open
@@ -123,7 +125,7 @@ describe("DownloadStep", () => {
       "GET /setup/pull": pull("idle", 0, 0),
       "POST /setup/pull/retry": { status: 202, body: { started: true } },
     });
-    render(<DownloadStep onUseApiKey={() => {}} onDone={() => {}} />);
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     await settle(3000);
     expect(count(fetchMock, "POST /setup/pull/retry")).toBe(1);
@@ -131,7 +133,7 @@ describe("DownloadStep", () => {
 
   it("does not retry on its own while downloading", async () => {
     const fetchMock = stubFetch({ "GET /setup/pull": pull("downloading", 1, 3) });
-    render(<DownloadStep onUseApiKey={() => {}} onDone={() => {}} />);
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle(3000);
     expect(count(fetchMock, "POST /setup/pull/retry")).toBe(0);
   });
@@ -139,7 +141,7 @@ describe("DownloadStep", () => {
   it("offers an API key instead", async () => {
     stubFetch({ "GET /setup/pull": pull("downloading", 1, 3) });
     const onUseApiKey = vi.fn();
-    render(<DownloadStep onUseApiKey={onUseApiKey} onDone={() => {}} />);
+    render(<DownloadStep position={POSITION} onUseApiKey={onUseApiKey} onDone={() => {}} />);
     await settle();
     await act(async () => { screen.getByRole("button", { name: "Use an API key instead" }).click(); });
     expect(onUseApiKey).toHaveBeenCalledTimes(1);

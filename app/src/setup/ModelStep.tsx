@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../engine";
+import { StepShell } from "../ui/StepShell";
+import type { StepPosition } from "./flow";
 
 type Recommendation = {
   model: { name: string; size_gb: number; min_budget_gb: number; label: string } | null;
@@ -13,9 +15,9 @@ function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : "Something went wrong. Please try again.";
 }
 
-type Props = { onDone: () => void; onUseApiKey: () => void };
+type Props = { position: StepPosition; onDone: () => void; onUseApiKey: () => void };
 
-export function ModelStep({ onDone, onUseApiKey }: Props) {
+export function ModelStep({ position, onDone, onUseApiKey }: Props) {
   const [rec, setRec] = useState<Recommendation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,8 +51,7 @@ export function ModelStep({ onDone, onUseApiKey }: Props) {
 
   if (!rec) {
     return (
-      <section className="stack" aria-live="polite">
-        <h1>Choose your AI model</h1>
+      <StepShell step={position} title="Choose your AI model" live="polite">
         {error ? (
           <>
             <p role="alert" className="error">
@@ -63,15 +64,14 @@ export function ModelStep({ onDone, onUseApiKey }: Props) {
         ) : (
           <p>Checking your computer…</p>
         )}
-      </section>
+      </StepShell>
     );
   }
 
   if (rec.reason === "memory" || !rec.model) {
     const disk = rec.reason === "disk";
     return (
-      <section className="stack">
-        <h1>Choose your AI model</h1>
+      <StepShell step={position} title="Choose your AI model">
         <p>{rec.message}</p>
         {disk ? (
           <button type="button" className="primary" onClick={() => void load()}>
@@ -82,14 +82,13 @@ export function ModelStep({ onDone, onUseApiKey }: Props) {
             Use an API key instead
           </button>
         )}
-      </section>
+      </StepShell>
     );
   }
 
   const minutes = rec.est_minutes;
   return (
-    <section className="stack">
-      <h1>Choose your AI model</h1>
+    <StepShell step={position} title="Choose your AI model">
       <p>{rec.message}</p>
       <p>
         <strong>{rec.model.label}</strong>
@@ -111,6 +110,6 @@ export function ModelStep({ onDone, onUseApiKey }: Props) {
       >
         Download
       </button>
-    </section>
+    </StepShell>
   );
 }
