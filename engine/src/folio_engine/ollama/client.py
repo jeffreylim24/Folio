@@ -56,6 +56,10 @@ class OllamaClient:
             self._base_url = normalize_host(DEFAULT_URL)
         self._http = httpx.Client(base_url=self._base_url, timeout=30)
 
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
     def version(self) -> str | None:
         try:
             r = self._http.get("/api/version", timeout=1)

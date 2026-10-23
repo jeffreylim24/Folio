@@ -63,6 +63,9 @@ def format_table(rows: list[dict]) -> str:
         "|---|---|---|---|---|",
     ]
     for r in rows:
+        if "error" in r:
+            lines.append(f"| {r['tag']} | ERROR: {r['error']} | | | |")
+            continue
         lines.append(
             f"| {r['tag']} | {r['loaded_gb']} | {r['gpu_percent']} "
             f"| {r['prompt_tokens']} | {r['tokens_per_s']} |"
@@ -80,35 +83,63 @@ def _pull(client: OllamaClient, tag: str) -> None:
                 print(f"  pulling {tag}: {pct}%", flush=True)
 
 
+def _same_model(listed: str, tag: str) -> bool:
+    def norm(n: str) -> str:
+        return n if ":" in n else f"{n}:latest"
+
+    return norm(listed) == norm(tag)
+
+
+class _Skip(Exception):
+    pass
+
+
 def measure(client: OllamaClient, http: httpx.Client, tag: str, delete: bool) -> dict:
+    """Measure one model; failures come back as a row with an `error` field."""
     model = find_model(tag)
-    if model is None:
-        sys.exit(f"{tag} is not in the catalog")
-    _pull(client, tag)
-    payload = {
-        "model": tag,
-        "messages": [{"role": "user", "content": build_prompt()}],
-        "stream": False,
-        "options": {
-            "num_ctx": model.context_tokens,
-            "temperature": 0.2,
-            "presence_penalty": 0,
-        },
-    }
-    if model.thinking:
-        payload["think"] = False
-    print(f"  running {tag}...", flush=True)
-    r = http.post("/api/chat", json=payload, timeout=None)
-    r.raise_for_status()
-    body = r.json()
-    ps = http.get("/api/ps").json().get("models", [])
-    entry = next((m for m in ps if tag in (m.get("name"), m.get("model"))), None)
-    if entry is None:
-        sys.exit(f"{tag} is not listed in /api/ps after the chat")
-    row = row_from(tag, entry, body)
-    if delete:
-        http.request("DELETE", "/api/delete", json={"model": tag}).raise_for_status()
-    return row
+    try:
+        if model is None:
+            raise _Skip(f"{tag} is not in the catalog")
+        _pull(client, tag)
+        payload = {
+            "model": tag,
+            "messages": [{"role": "user", "content": build_prompt()}],
+            "stream": False,
+            "options": {
+                "num_ctx": model.context_tokens,
+                "temperature": 0.2,
+                "presence_penalty": 0,
+            },
+        }
+        if model.thinking:
+            payload["think"] = False
+        print(f"  running {tag}...", flush=True)
+        r = http.post("/api/chat", json=payload, timeout=None)
+        r.raise_for_status()
+        body = r.json()
+        r = http.get("/api/ps")
+        r.raise_for_status()
+        ps = r.json().get("models", [])
+        entry = next(
+            (
+                m
+                for m in ps
+                if _same_model(m.get("name", ""), tag)
+                or _same_model(m.get("model", ""), tag)
+            ),
+            None,
+        )
+        if entry is None:
+            names = [m.get("name") for m in ps]
+            raise _Skip(f"{tag} not in /api/ps after the chat; listed: {names}")
+        row = row_from(tag, entry, body)
+        if delete:
+            http.request(
+                "DELETE", "/api/delete", json={"model": tag}
+            ).raise_for_status()
+        return row
+    except Exception as e:  # noqa: BLE001 - one bad model must not lose the rest
+        return {"tag": tag, "error": str(e) or type(e).__name__}
 
 
 def main() -> None:
@@ -119,15 +150,18 @@ def main() -> None:
     args = ap.parse_args()
 
     tags = args.tags or [m.tag for m in MODEL_CATALOG if m.tier]
+    unknown = [t for t in tags if find_model(t) is None]
+    if unknown:
+        sys.exit(f"Not in the catalog: {', '.join(unknown)}")
     client = OllamaClient()
     if client.version() is None:
         sys.exit("Ollama is not running. Start it (or set OLLAMA_HOST) and retry.")
-    rows = []
-    with httpx.Client(base_url=client._base_url) as http:
+    rows: list[dict] = []
+    with httpx.Client(base_url=client.base_url) as http:
         for tag in tags:
             print(tag, flush=True)
             rows.append(measure(client, http, tag, args.delete))
-    Path(args.out).write_text(json.dumps(rows, indent=2))
+            Path(args.out).write_text(json.dumps(rows, indent=2))
     print("\n" + format_table(rows))
     print(f"\nWrote {args.out}")
 
