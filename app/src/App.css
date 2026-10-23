@@ -644,3 +644,51 @@ button.linklike {
   .progressfill { transition: none; }
   .progressbar.indeterminate .progressfill { animation: none; width: 100%; opacity: 0.5; }
 }
+
+/* ---- Download step ---- */
+
+.download-art {
+  position: relative;
+  height: 56px;
+  margin: 0.4rem 0 1rem;
+  overflow: hidden;
+}
+.art-box, .art-device {
+  position: absolute;
+  top: 50%;
+  width: 34px;
+  height: 26px;
+  margin-top: -13px;
+  border-radius: 7px;
+  border: 2px solid var(--border-hi);
+  background: var(--surface-2);
+}
+.art-box { left: 12%; }
+.art-device { right: 12%; border-color: var(--accent); }
+.art-packet {
+  position: absolute;
+  top: 50%;
+  left: 20%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: 0;
+  animation: packet 3.6s ease-in-out infinite;
+}
+.art-packet.p2 { animation-delay: 1.2s; }
+.art-packet.p3 { animation-delay: 2.4s; }
+.download-art.paused .art-packet { animation-play-state: paused; opacity: 0.25; }
+.download-art.paused .art-device { border-color: var(--warn); }
+
+@keyframes packet {
+  0% { left: 20%; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { left: 78%; opacity: 0; }
+}
+
+.download-meta { display: flex; justify-content: space-between; gap: 1rem; color: var(--muted); font-size: 0.875rem; margin: 0.4rem 0 0; }
+.download-tip { min-height: 3em; margin: 1rem 0; color: var(--muted); text-align: center; animation: rise 0.25s ease-out both; }
+.paused-note { margin: 1rem 0; }

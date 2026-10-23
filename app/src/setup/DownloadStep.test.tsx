@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { resetEngineCache } from "../engine";
 import { stubFetch } from "../test/mockEngine";
 import { DownloadStep } from "./DownloadStep";
+import { TIPS } from "./tips";
 
 const POSITION = { n: 1, total: 5, label: "Test" };
 
@@ -11,6 +12,9 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 const pull = (state: string, completed: number, total: number, error: string | null = null) => ({
   body: { state, model: "qwen3:14b", completed_bytes: completed, total_bytes: total, error },
+});
+const pullX = (state: string, completed: number, total: number, extra: object = {}) => ({
+  body: { state, model: "qwen3:14b", completed_bytes: completed, total_bytes: total, error: null, resuming: false, ...extra },
 });
 const settle = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 const count = (mock: ReturnType<typeof stubFetch>, key: string) =>
@@ -145,5 +149,67 @@ describe("DownloadStep", () => {
     await settle();
     await act(async () => { screen.getByRole("button", { name: "Use an API key instead" }).click(); });
     expect(onUseApiKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("stalled shows a paused message, keeps the percent, and hides tips and Retry", async () => {
+    stubFetch({ "GET /setup/pull": pullX("stalled", 600, 1000) });
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} randomIndex={() => 0} />);
+    await settle();
+    expect(screen.getByText("Download paused. Check your internet connection. It'll pick up where it left off when you're back online.")).toBeTruthy();
+    expect(screen.getByText("60%")).toBeTruthy();
+    expect(screen.queryByTestId("tip")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("goes back to normal when a stalled download starts moving", async () => {
+    let state = "stalled";
+    stubFetch({ "GET /setup/pull": () => pullX(state, 600, 1000) });
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} randomIndex={() => 0} />);
+    await settle();
+    expect(screen.getByText(/Download paused/)).toBeTruthy();
+    state = "downloading";
+    await settle(1000);
+    expect(screen.queryByText(/Download paused/)).toBeNull();
+    expect(screen.getByTestId("tip").textContent).toBe(TIPS[0]);
+  });
+
+  it("shows Resuming with the last saved progress", async () => {
+    stubFetch({ "GET /setup/pull": pullX("downloading", 600, 1000, { resuming: true }) });
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} randomIndex={() => 0} />);
+    await settle();
+    expect(screen.getByText("Resuming…")).toBeTruthy();
+    expect(screen.getByText("60%")).toBeTruthy();
+  });
+
+  it("rotates the tip every 10 seconds", async () => {
+    stubFetch({ "GET /setup/pull": pullX("downloading", 1, 3) });
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} randomIndex={() => 2} />);
+    await settle();
+    expect(screen.getByTestId("tip").textContent).toBe(TIPS[2]);
+    await settle(9000);
+    expect(screen.getByTestId("tip").textContent).toBe(TIPS[2]);
+    await settle(1000);
+    expect(screen.getByTestId("tip").textContent).toBe(TIPS[3]);
+  });
+
+  it("shows size and time left once there are 5 seconds of samples", async () => {
+    let n = 0;
+    stubFetch({ "GET /setup/pull": () => pullX("downloading", 600_000_000 + 1_000_000 * n++, 1_000_000_000) });
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} randomIndex={() => 0} />);
+    await settle();
+    expect(screen.getByText("0.6 of 1.0 GB")).toBeTruthy();
+    expect(screen.queryByText(/min left|Less than a minute left/)).toBeNull();
+    await settle(2000);
+    expect(screen.queryByText(/min left|Less than a minute left/)).toBeNull();
+    await settle(4000);
+    expect(screen.getByText(/^About \d+ min left$/)).toBeTruthy();
+  });
+
+  it("does not show time left while resuming", async () => {
+    let n = 0;
+    stubFetch({ "GET /setup/pull": () => pullX("downloading", 600_000_000 + 1_000_000 * n++, 1_000_000_000, { resuming: true }) });
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} randomIndex={() => 0} />);
+    await settle(7000);
+    expect(screen.queryByText(/min left|Less than a minute left/)).toBeNull();
   });
 });
