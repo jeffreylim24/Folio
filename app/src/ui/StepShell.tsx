@@ -14,7 +14,8 @@ export function StepShell({ step, title, lede, children, live }: Props) {
   return (
     <section className="card" aria-live={live}>
       <div className="eyebrow">
-        Step {step.n} of {step.total} · {step.label}
+        Step {step.n}
+        {step.total ? ` of ${step.total}` : ""} · {step.label}
       </div>
       <h1>{title}</h1>
       {lede && <p className="lede">{lede}</p>}

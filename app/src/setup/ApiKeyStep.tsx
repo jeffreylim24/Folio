@@ -65,22 +65,26 @@ export function ApiKeyStep({ disabled = false, onDone }: Props) {
   return (
     <form className="stack" onSubmit={connect}>
       <fieldset className="stack" disabled={disabled || busy}>
-        <label className="field">
-          <span>Provider</span>
-          <select
-            value={provider}
-            onChange={(e) => {
-              setProvider(e.target.value as ProviderName);
-              setModels(null);
-            }}
-          >
+        <fieldset className="field">
+          <legend>Provider</legend>
+          <div className="segmented">
             {PROVIDERS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
+              <label key={p.value} className="seg">
+                <input
+                  type="radio"
+                  name="provider"
+                  value={p.value}
+                  checked={provider === p.value}
+                  onChange={() => {
+                    setProvider(p.value);
+                    setModels(null);
+                  }}
+                />
+                <span>{p.label}</span>
+              </label>
             ))}
-          </select>
-        </label>
+          </div>
+        </fieldset>
         {provider === "openai_compatible" && (
           <label className="field">
             <span>Base URL</span>

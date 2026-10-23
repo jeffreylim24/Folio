@@ -13,11 +13,15 @@ export function SetupWizard({ onEngineProblem }: { onEngineProblem: (message: st
   // A screen the user asked for that the saved state would not pick
   // (e.g. "Use an API key instead"); cleared whenever state is re-fetched.
   const [override, setOverride] = useState<Step | null>(null);
+  // Whether this session needed the Ollama step, so later steps count it.
+  const [sawOllama, setSawOllama] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      setState(await getSetupState());
+      const s = await getSetupState();
+      setState(s);
       setOverride(null);
+      if (nextStep(s) === "ollama") setSawOllama(true);
     } catch (e) {
       onEngineProblem(e instanceof Error ? e.message : "Unknown error");
     }
@@ -60,7 +64,7 @@ export function SetupWizard({ onEngineProblem }: { onEngineProblem: (message: st
     API_PROVIDERS.includes(state.settings.provider);
 
   const apiPath = step === "api-key" || usesApiKey;
-  const position = stepPosition(step, apiPath);
+  const position = stepPosition(step, apiPath, sawOllama);
 
   return (
     <main className="page">

@@ -17,10 +17,10 @@ beforeEach(() => {
 describe("ApiKeyStep", () => {
   it("offers the four providers and shows a base URL only for OpenAI-compatible", async () => {
     render(<ApiKeyStep onDone={() => {}} />);
-    const options = screen.getAllByRole("option").map((o) => o.textContent);
+    const options = screen.getAllByRole("radio").map((o) => o.closest("label")?.textContent);
     expect(options).toEqual(["Anthropic", "OpenAI", "Google Gemini", "Other OpenAI-compatible"]);
     expect(screen.queryByLabelText("Base URL")).toBeNull();
-    await userEvent.selectOptions(screen.getByLabelText("Provider"), "Other OpenAI-compatible");
+    await userEvent.click(screen.getByRole("radio", { name: "Other OpenAI-compatible" }));
     expect(screen.getByLabelText("Base URL")).toBeTruthy();
   });
 
@@ -42,7 +42,7 @@ describe("ApiKeyStep", () => {
       "POST /setup/api-provider": { status: 400, body: { detail: "A base URL is required for this provider." } },
     });
     render(<ApiKeyStep onDone={() => {}} />);
-    await userEvent.selectOptions(screen.getByLabelText("Provider"), "Other OpenAI-compatible");
+    await userEvent.click(screen.getByRole("radio", { name: "Other OpenAI-compatible" }));
     await userEvent.type(screen.getByLabelText("API key"), "k");
     await userEvent.click(screen.getByRole("button", { name: "Check my key" }));
     expect((await screen.findByRole("alert")).textContent).toBe("A base URL is required for this provider.");

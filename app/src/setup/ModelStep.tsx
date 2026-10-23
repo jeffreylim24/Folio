@@ -183,7 +183,10 @@ export function ModelStep({ position, onDone, onUseApiKey }: Props) {
           </button>
         </p>
       )}
-      <button type="button" className="cta" disabled={!picked || busy || blocked !== null} onClick={onCta}>
+      <button
+        type="button"
+        className={`cta${picked?.fit === "no" ? " danger" : ""}`}
+        disabled={!picked || busy || blocked !== null} onClick={onCta}>
         {label}
       </button>
       <p className="sub">

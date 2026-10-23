@@ -32,22 +32,23 @@ export function nextStep(s: SetupState): Step {
   return "provider";
 }
 
-export type StepPosition = { n: number; total: number; label: string };
+// The first screen has no total: until a path is chosen we don't know how
+// many steps follow. The Ollama step only counts when it was needed.
+export type StepPosition = { n: number; total?: number; label: string };
 
-const LOCAL_STEPS: Partial<Record<Step, StepPosition>> = {
-  provider: { n: 1, total: 5, label: "How Folio's AI runs" },
-  "api-key": { n: 1, total: 5, label: "How Folio's AI runs" },
-  ollama: { n: 2, total: 5, label: "Set up Ollama" },
-  model: { n: 3, total: 5, label: "Choose a model" },
-  download: { n: 4, total: 5, label: "Download" },
-  ready: { n: 5, total: 5, label: "Finish" },
-};
+const CHOOSE: StepPosition = { n: 1, label: "How Folio's AI runs" };
+const LOCAL_LABELS: [Step, string][] = [
+  ["ollama", "Set up Ollama"],
+  ["model", "Choose a model"],
+  ["download", "Download"],
+  ["ready", "Finish"],
+];
 
-export function stepPosition(step: Step, apiPath: boolean): StepPosition {
-  if (apiPath) {
-    return step === "ready"
-      ? { n: 2, total: 2, label: "Finish" }
-      : { n: 1, total: 2, label: "How Folio's AI runs" };
-  }
-  return LOCAL_STEPS[step] ?? { n: 1, total: 5, label: "How Folio's AI runs" };
+export function stepPosition(step: Step, apiPath: boolean, withOllama: boolean): StepPosition {
+  if (step === "provider" || step === "api-key") return CHOOSE;
+  if (apiPath) return step === "ready" ? { n: 2, total: 2, label: "Finish" } : CHOOSE;
+  const steps = LOCAL_LABELS.filter(([s]) => s !== "ollama" || withOllama || step === "ollama");
+  const i = steps.findIndex(([s]) => s === step);
+  if (i === -1) return CHOOSE;
+  return { n: i + 2, total: steps.length + 1, label: steps[i][1] };
 }

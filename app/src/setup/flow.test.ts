@@ -92,12 +92,17 @@ describe("outdated Ollama", () => {
 });
 
 describe("stepPosition", () => {
-  it("numbers the local path", () => {
-    expect(stepPosition("model", false)).toEqual({ n: 3, total: 5, label: "Choose a model" });
-    expect(stepPosition("provider", false)).toEqual({ n: 1, total: 5, label: "How Folio's AI runs" });
+  it("gives the first screen no total, whichever path is open", () => {
+    expect(stepPosition("provider", false, false)).toEqual({ n: 1, label: "How Folio's AI runs" });
+    expect(stepPosition("api-key", true, false)).toEqual({ n: 1, label: "How Folio's AI runs" });
+  });
+  it("counts the Ollama step only when it was needed", () => {
+    expect(stepPosition("ollama", false, false)).toEqual({ n: 2, total: 5, label: "Set up Ollama" });
+    expect(stepPosition("model", false, true)).toEqual({ n: 3, total: 5, label: "Choose a model" });
+    expect(stepPosition("model", false, false)).toEqual({ n: 2, total: 4, label: "Choose a model" });
+    expect(stepPosition("ready", false, false)).toEqual({ n: 4, total: 4, label: "Finish" });
   });
   it("numbers the API path", () => {
-    expect(stepPosition("ready", true)).toEqual({ n: 2, total: 2, label: "Finish" });
-    expect(stepPosition("api-key", true)).toEqual({ n: 1, total: 2, label: "How Folio's AI runs" });
+    expect(stepPosition("ready", true, false)).toEqual({ n: 2, total: 2, label: "Finish" });
   });
 });

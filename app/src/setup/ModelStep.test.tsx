@@ -101,7 +101,8 @@ describe("ModelStep", () => {
     const best = (await screen.findByText("qwen3.8:27b")).closest("[role=radio]") as HTMLElement;
     await userEvent.click(best);
     expect(within(best).getByText("Too big for your device")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Download Best quality anyway (qwen3.8:27b)" })).toBeTruthy();
+    const cta = screen.getByRole("button", { name: "Download Best quality anyway (qwen3.8:27b)" });
+    expect(cta.classList.contains("danger")).toBe(true);
   });
 
   it("picker lists models grouped by fit and shows an info card", async () => {

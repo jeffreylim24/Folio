@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getEngineInfo, restartEngine } from "./engine";
 import { SetupWizard } from "./setup/SetupWizard";
+import { ThemeToggle } from "./ui/ThemeToggle";
 import "./App.css";
 
 type Status = { kind: "starting" } | { kind: "ready" } | { kind: "error"; detail: string };
@@ -10,6 +11,15 @@ function describe(e: unknown): string {
 }
 
 export default function App() {
+  return (
+    <>
+      <ThemeToggle />
+      <Screens />
+    </>
+  );
+}
+
+function Screens() {
   const [status, setStatus] = useState<Status>({ kind: "starting" });
   const [attempt, setAttempt] = useState(0);
 

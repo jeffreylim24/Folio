@@ -76,6 +76,8 @@ describe("SetupWizard routing", () => {
     wizard();
     await userEvent.click(await screen.findByRole("button", { name: /Run privately/ }));
     expect(await screen.findByText("Not enough memory.")).toBeTruthy();
+    // Ollama was already running, so its step is not counted.
+    expect(document.querySelector(".eyebrow")?.textContent).toBe("Step 2 of 4 · Choose a model");
   });
 
   it("reports an engine problem if Run privately can't be saved", async () => {
