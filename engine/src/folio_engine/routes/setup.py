@@ -106,7 +106,7 @@ def put_model(choice: ModelChoice, request: Request) -> dict[str, bool]:
         raise HTTPException(400, "That model isn't one Folio can set up.")
     pulls = request.app.state.pull_manager
     active = pulls.status()
-    if active.state == "downloading" and active.model != model.tag:
+    if active.state in ("downloading", "stalled") and active.model != model.tag:
         raise HTTPException(
             409,
             "Another model is already downloading. Wait for it to finish or retry.",
@@ -141,8 +141,11 @@ def post_pull_retry(request: Request) -> dict[str, bool]:
     model = find_model(tag) if tag else None
     if model is None:
         raise HTTPException(400, "No model has been chosen yet.")
-    # The disk check counts only the bytes still to download.
-    request.app.state.pull_manager.start(model.tag, model.download_gb)
+    pulls = request.app.state.pull_manager
+    # With saved progress the disk check counts only the bytes still to
+    # download; without it, part of the model may already be on disk, so skip.
+    size = model.download_gb if pulls.has_saved_progress(model.tag) else None
+    pulls.start(model.tag, size)
     return {"started": True}
 
 

@@ -21,8 +21,18 @@ def test_usable_apple_silicon():
     assert usable_memory_gb(HardwareInfo("macos", "arm64", 24, True, None, 500)) == 16.1
 
 
-def test_usable_nvidia():
+def test_usable_nvidia_prefers_ram_when_larger():
     h = HardwareInfo("windows", "AMD64", 32, False, 12, 500)
+    assert usable_memory_gb(h) == 16.0
+
+
+def test_usable_nvidia_big_gpu_uses_vram():
+    h = HardwareInfo("windows", "AMD64", 32, False, 24, 500)
+    assert usable_memory_gb(h) == 21.6
+
+
+def test_usable_nvidia_small_ram_uses_vram():
+    h = HardwareInfo("windows", "AMD64", 16, False, 12, 500)
     assert usable_memory_gb(h) == 10.8
 
 

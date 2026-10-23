@@ -72,7 +72,7 @@ def test_base_url_from_env(monkeypatch):
 def test_pull_http_error_keeps_ollama_body_end_to_end(tmp_path):
     respx.post(f"{BASE}/api/pull").mock(
         return_value=httpx.Response(
-            404, json={"error": "pull model manifest: file does not exist"}
+            404, json={"error": "file does not exist"}
         )
     )
     config = ConfigStore(tmp_path / "settings.json")

@@ -103,7 +103,7 @@ def test_device_labels_apple_unknown_chip():
 def test_device_labels_nvidia():
     hw = HardwareInfo("windows", "AMD64", 32, False, 12, 100, gpu_name="RTX 4070")
     d = advise(hw, [S, B, X]).device
-    assert d.usable_gb == 10.8
+    assert d.usable_gb == 16.0
     assert (d.chip_label, d.chip_note) == ("RTX 4070", "12 GB of graphics memory")
     hw = HardwareInfo("windows", "AMD64", 32, False, 12, 100)
     assert advise(hw, [S, B, X]).device.chip_label == "NVIDIA graphics card"

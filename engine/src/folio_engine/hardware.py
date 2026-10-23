@@ -109,5 +109,5 @@ def usable_memory_gb(hw: HardwareInfo) -> float:
     if hw.apple_silicon:
         return round(0.67 * hw.total_ram_gb, 1)
     if has_usable_gpu(hw):
-        return round(0.9 * (hw.gpu_vram_gb or 0), 1)
+        return round(max(0.9 * (hw.gpu_vram_gb or 0), 0.5 * hw.total_ram_gb), 1)
     return round(0.5 * hw.total_ram_gb, 1)

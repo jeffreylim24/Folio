@@ -112,6 +112,7 @@ from folio_engine.ollama.detect import version_ok
         ("0.32.11", False),
         ("0.31.2", False),
         ("dev", True),
+        ("0.0.0", True),
         ("", True),
     ],
 )

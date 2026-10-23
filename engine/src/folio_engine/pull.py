@@ -23,6 +23,29 @@ MSG_OLLAMA_DOWN = (
 )
 
 
+_NETWORK_HINTS = (
+    "dial tcp",
+    "no such host",
+    "connection refused",
+    "network",
+    "timeout",
+    "i/o timeout",
+    "pull model manifest",
+)
+
+
+def _looks_like_network_failure(text: str) -> bool:
+    lowered = text.lower()
+    return any(hint in lowered for hint in _NETWORK_HINTS)
+
+
+def _download_failed_message(text: str) -> str:
+    """Plain wording for a failed pull; network trouble reads as an interruption."""
+    if _looks_like_network_failure(text):
+        return MSG_INTERRUPTED
+    return f"Ollama couldn't download the model: {text}"
+
+
 def _ollama_error_text(response: httpx.Response) -> str:
     """Ollama's own error message from a failed response, if it sent one."""
     try:
@@ -67,6 +90,7 @@ class PullManager:
         self._last_progress_at = 0.0
         self._last_fresh_bytes = 0
         self._last_write_at: float | None = None
+        self._last_event_status: str | None = None
         self._seed_bytes = 0
         self._lock = threading.Lock()
         self._status = PullStatus("idle", None, 0, 0, None)
@@ -79,6 +103,7 @@ class PullManager:
             if (
                 status.state == "downloading"
                 and self._clock() - self._last_progress_at >= self._stall_after_s
+                and not 0 < status.total_bytes <= status.completed_bytes
             ):
                 status.state = "stalled"
             return status
@@ -116,6 +141,11 @@ class PullManager:
             self._progress_path.unlink(missing_ok=True)
         except OSError:
             pass
+
+    def has_saved_progress(self, model: str) -> bool:
+        """True if an earlier attempt at this model left bytes on record."""
+        completed, _ = self._read_progress(model)
+        return completed > 0
 
     def join(self, timeout: float | None = None) -> None:
         """Wait for a background resume check, then for the pull itself."""
@@ -157,6 +187,7 @@ class PullManager:
             self._last_progress_at = self._clock()
             self._last_fresh_bytes = 0
             self._last_write_at = None
+            self._last_event_status = None
             self._thread = threading.Thread(
                 target=self._run, args=(model,), daemon=True
             )
@@ -209,6 +240,12 @@ class PullManager:
         layers: dict[str, tuple[int, int]] = {}
         try:
             for event in self._client.pull(model):
+                with self._lock:
+                    # Final steps (verifying, writing manifest) carry no byte
+                    # counts; a new step still means Ollama is working.
+                    if event.status != self._last_event_status:
+                        self._last_event_status = event.status
+                        self._last_progress_at = self._clock()
                 if event.status == "success":
                     with self._lock:
                         self._status.state = "done"
@@ -238,11 +275,9 @@ class PullManager:
                         self._write_progress(model, fresh, total)
             self._set_error(MSG_INTERRUPTED)
         except OllamaError as e:
-            self._set_error(f"Ollama couldn't download the model: {e}")
+            self._set_error(_download_failed_message(str(e)))
         except httpx.HTTPStatusError as e:
-            self._set_error(
-                f"Ollama couldn't download the model: {_ollama_error_text(e.response)}"
-            )
+            self._set_error(_download_failed_message(_ollama_error_text(e.response)))
         except httpx.ConnectError:
             self._set_error(MSG_OLLAMA_DOWN)
         except Exception:  # noqa: BLE001

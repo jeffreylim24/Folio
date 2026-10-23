@@ -18,7 +18,10 @@ def version_ok(version: str | None) -> bool:
     m = re.match(r"\d+\.\d+\.\d+", version or "")
     if m is None:
         return True
-    return tuple(int(x) for x in m.group().split(".")) >= MIN_OLLAMA_VERSION
+    parsed = tuple(int(x) for x in m.group().split("."))
+    if parsed == (0, 0, 0):
+        return True  # source builds report 0.0.0; treat as unknown
+    return parsed >= MIN_OLLAMA_VERSION
 
 
 @dataclass

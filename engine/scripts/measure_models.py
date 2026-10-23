@@ -8,7 +8,7 @@ Run (Ollama must be running; pulls are multi-GB downloads):
 
     cd engine
     uv run python scripts/measure_models.py                  # the three tier models
-    uv run python scripts/measure_models.py qwen3:8b --delete  # chosen tags, then remove them
+    uv run python scripts/measure_models.py qwen3.5:9b-q4_K_M --delete  # chosen tags, then remove them
 
 Options: --delete removes each model after measuring (saves disk);
 --out FILE sets the JSON output path (default measure-results.json).
