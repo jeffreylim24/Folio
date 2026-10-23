@@ -1,10 +1,12 @@
+import math
 from collections.abc import Callable
 from typing import Any, Literal, Protocol, TypedDict
 
 import httpx
 
-ErrorKind = Literal["auth", "network", "rate_limit", "other"]
+ErrorKind = Literal["auth", "network", "rate_limit", "too_long", "other"]
 
+OUTPUT_RESERVE_TOKENS = 2048
 LIST_TIMEOUT = 15
 COMPLETE_TIMEOUT = 60
 
@@ -20,6 +22,11 @@ _MESSAGES = {
 class Message(TypedDict):
     role: Literal["system", "user", "assistant"]
     content: str
+
+
+def estimate_tokens(messages: list[Message]) -> int:
+    """Rough token count: about 3.5 characters per token."""
+    return math.ceil(sum(len(m["content"]) for m in messages) / 3.5)
 
 
 class ProviderError(Exception):

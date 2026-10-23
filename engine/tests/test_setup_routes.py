@@ -401,3 +401,43 @@ def test_pull_retry_rejects_uncatalogued_model(tmp_path):
     app.state.config.save(Settings("ollama", "qwen3:14b", None, False))
     r = TestClient(app).post("/setup/pull/retry", headers=AUTH)
     assert r.status_code == 400
+
+
+class RecordingInstaller:
+    def __init__(self):
+        self.calls = []
+
+    def start(self, update=False):
+        self.calls.append(update)
+
+
+def _update_client(tmp_path, monkeypatch, standard):
+    app_dir = tmp_path / "Ollama.app"
+    app_dir.mkdir()
+    monkeypatch.setattr(
+        "folio_engine.ollama.detect.default_candidates",
+        lambda: [app_dir] if standard else [],
+    )
+    monkeypatch.setattr("folio_engine.ollama.detect.sys.platform", "darwin")
+    inst = RecordingInstaller()
+    app = create_app(
+        "secret", tmp_path, ollama_client=FakeOllama(["0.30.0"]), installer=inst
+    )
+    return TestClient(app), inst
+
+
+def test_update_route_rejects_nonstandard_install(tmp_path, monkeypatch):
+    client, inst = _update_client(tmp_path, monkeypatch, standard=False)
+    r = client.post("/setup/ollama/update", headers=AUTH)
+    assert r.status_code == 400
+    assert r.json()["detail"] == (
+        "Folio can only update Ollama installed the standard way."
+    )
+    assert inst.calls == []
+
+
+def test_update_route_starts_installer(tmp_path, monkeypatch):
+    client, inst = _update_client(tmp_path, monkeypatch, standard=True)
+    r = client.post("/setup/ollama/update", headers=AUTH)
+    assert r.status_code == 202
+    assert inst.calls == [True]

@@ -63,6 +63,17 @@ def post_ollama_install(request: Request) -> dict[str, bool]:
     return {"started": True}
 
 
+@router.post("/ollama/update", status_code=202)
+def post_ollama_update(request: Request) -> dict[str, bool]:
+    installer = _installer(request)
+    if not find_ollama(request.app.state.ollama_client).updatable:
+        raise HTTPException(
+            400, "Folio can only update Ollama installed the standard way."
+        )
+    installer.start(update=True)
+    return {"started": True}
+
+
 @router.get("/ollama/install")
 def get_ollama_install(request: Request) -> dict[str, Any]:
     return asdict(_installer(request).status())

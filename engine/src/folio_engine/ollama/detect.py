@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -9,6 +10,16 @@ from pathlib import Path
 
 from .client import OllamaClient
 
+MIN_OLLAMA_VERSION = (0, 32, 12)
+
+
+def version_ok(version: str | None) -> bool:
+    """True if the version is new enough (or can't be read, so we don't block)."""
+    m = re.match(r"\d+\.\d+\.\d+", version or "")
+    if m is None:
+        return True
+    return tuple(int(x) for x in m.group().split(".")) >= MIN_OLLAMA_VERSION
+
 
 @dataclass
 class OllamaStatus:
@@ -16,6 +27,8 @@ class OllamaStatus:
     running: bool
     version: str | None
     app_path: str | None
+    outdated: bool = False
+    updatable: bool = False
 
 
 def default_candidates() -> list[Path]:
@@ -40,11 +53,14 @@ def find_ollama(
     app_path = next((str(p) for p in paths if p.exists()), None) or which("ollama")
     version = client.version()
     running = version is not None
+    standard = {str(p) for p in default_candidates()}
     return OllamaStatus(
         installed=running or app_path is not None,
         running=running,
         version=version,
         app_path=app_path,
+        outdated=running and not version_ok(version),
+        updatable=sys.platform in ("darwin", "win32") and app_path in standard,
     )
 
 

@@ -199,7 +199,8 @@ class FakeOllamaClient:
             raise self.exc
         return ["q"]
 
-    def chat(self, model, messages, json_schema=None):
+    def chat(self, model, messages, json_schema=None, **kwargs):
+        self.kwargs = kwargs
         if self.exc:
             raise self.exc
         return f"{model}:{json_schema}"
@@ -375,9 +376,34 @@ def test_empty_reply_is_provider_error(provider, url, body):
 @pytest.mark.parametrize("reply", [None, "", " \n"])
 def test_ollama_empty_reply_is_provider_error(reply):
     class EmptyClient(FakeOllamaClient):
-        def chat(self, model, messages, json_schema=None):
+        def chat(self, model, messages, json_schema=None, **kwargs):
             return reply
 
     with pytest.raises(ProviderError) as ei:
         OllamaProvider(EmptyClient(), "q").complete(MSGS)
     assert ei.value.kind == "other"
+
+
+@pytest.mark.parametrize(
+    "tag, think",
+    [("qwen3.5:9b-q4_K_M", False), ("ministral-3:14b-instruct-2512-q4_K_M", None)],
+)
+def test_ollama_provider_sets_context_and_think(tag, think):
+    client = FakeOllamaClient()
+    OllamaProvider(client, tag).complete(MSGS)
+    assert client.kwargs["options"]["num_ctx"] == 16384
+    assert client.kwargs["options"]["presence_penalty"] == 0
+    assert client.kwargs["options"]["temperature"] == 0.2
+    assert client.kwargs.get("think") is think
+
+
+def test_ollama_provider_rejects_too_long():
+    client = FakeOllamaClient()
+    client.chat = lambda *a, **k: pytest.fail("client must not be called")
+    big = [{"role": "user", "content": "x" * 60000}]
+    with pytest.raises(ProviderError) as ei:
+        OllamaProvider(client, "qwen3.5:9b-q4_K_M").complete(big)
+    assert ei.value.kind == "too_long"
+    assert ei.value.message == (
+        "This is too much text for the AI to read at once. Try a shorter document."
+    )

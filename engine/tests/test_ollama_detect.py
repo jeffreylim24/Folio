@@ -92,3 +92,56 @@ def test_start_noop_when_already_running_or_not_installed():
         launcher=launched.append,
     )
     assert launched == []
+
+
+import sys
+
+import pytest
+
+from folio_engine.ollama import detect
+from folio_engine.ollama.detect import version_ok
+
+
+@pytest.mark.parametrize(
+    "v, ok",
+    [
+        ("0.32.12", True),
+        ("0.40.9", True),
+        ("1.0.0", True),
+        ("0.33.0-rc1", True),
+        ("0.32.11", False),
+        ("0.31.2", False),
+        ("dev", True),
+        ("", True),
+    ],
+)
+def test_version_ok(v, ok):
+    assert version_ok(v) is ok
+
+
+def test_none_version_not_outdated():
+    s = find_ollama(FakeClient([None]), candidates=[], which=no_which)
+    assert s.outdated is False
+
+
+def test_outdated_running(tmp_path):
+    app = tmp_path / "Ollama.app"
+    app.mkdir()
+    s = find_ollama(FakeClient(["0.30.0"]), candidates=[app], which=no_which)
+    assert s.outdated is True
+
+
+def test_updatable_only_for_standard_install(tmp_path, monkeypatch):
+    app = tmp_path / "Ollama.app"
+    app.mkdir()
+    monkeypatch.setattr(detect, "default_candidates", lambda: [app])
+    monkeypatch.setattr(sys, "platform", "darwin")
+    s = find_ollama(FakeClient(["0.30.0"]), candidates=[app], which=no_which)
+    assert s.updatable is True
+    s = find_ollama(
+        FakeClient(["0.30.0"]), candidates=[], which=lambda _: "/usr/local/bin/ollama"
+    )
+    assert s.updatable is False
+    monkeypatch.setattr(sys, "platform", "linux")
+    s = find_ollama(FakeClient(["0.30.0"]), candidates=[app], which=no_which)
+    assert s.updatable is False

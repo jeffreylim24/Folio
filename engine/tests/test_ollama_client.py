@@ -102,3 +102,24 @@ def test_pull_http_error_keeps_ollama_body_end_to_end(tmp_path):
 def test_ollama_host_is_normalised(monkeypatch, host, expected):
     monkeypatch.setenv("OLLAMA_HOST", host)
     assert OllamaClient()._base_url == expected
+
+
+@respx.mock
+def test_chat_sends_options_and_think():
+    route = respx.post(f"{BASE}/api/chat").respond(json={"message": {"content": "hi"}})
+    OllamaClient(BASE).chat("m", [], options={"num_ctx": 16384}, think=False)
+    import json as _json
+
+    body = _json.loads(route.calls[0].request.content)
+    assert body["options"] == {"num_ctx": 16384}
+    assert body["think"] is False
+
+
+@respx.mock
+def test_chat_omits_unset():
+    route = respx.post(f"{BASE}/api/chat").respond(json={"message": {"content": "hi"}})
+    OllamaClient(BASE).chat("m", [])
+    import json as _json
+
+    body = _json.loads(route.calls[0].request.content)
+    assert "options" not in body and "think" not in body

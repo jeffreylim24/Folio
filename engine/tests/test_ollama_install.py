@@ -157,3 +157,42 @@ def test_start_failure_message_is_platform_specific(tmp_path):
     assert message == (
         "Ollama was installed but didn't start. Try opening it from the Start menu."
     )
+
+
+def test_update_stops_then_replaces_then_starts(tmp_path):
+    order = []
+    inst = Installer(
+        "macos",
+        tmp_path,
+        FakeClient(),
+        install_fn=lambda p: order.append("install"),
+        start_fn=lambda: order.append("start") or True,
+        stop_fn=lambda: order.append("stop") or True,
+        replace_fn=lambda p: order.append("replace"),
+    )
+    with respx.mock:
+        mock_assets(f"{SHA}  Ollama-darwin.zip\n")
+        inst.start(update=True)
+        inst.join(10)
+    assert order == ["stop", "replace", "start"]
+    assert inst.status().state == "done"
+
+
+def test_update_stop_fails(tmp_path):
+    replaced = []
+    inst = Installer(
+        "macos",
+        tmp_path,
+        FakeClient(),
+        start_fn=lambda: True,
+        stop_fn=lambda: False,
+        replace_fn=replaced.append,
+    )
+    inst.start(update=True)
+    inst.join(10)
+    st = inst.status()
+    assert st.state == "error"
+    assert st.message == (
+        "Folio couldn't close Ollama to update it. Quit Ollama and try again."
+    )
+    assert replaced == []

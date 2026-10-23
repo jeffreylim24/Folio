@@ -88,7 +88,12 @@ class OllamaClient:
                 )
 
     def chat(
-        self, model: str, messages: list[dict], json_schema: dict | None = None
+        self,
+        model: str,
+        messages: list[dict],
+        json_schema: dict | None = None,
+        options: dict | None = None,
+        think: bool | None = None,
     ) -> str:
         payload: dict[str, Any] = {
             "model": model,
@@ -97,6 +102,10 @@ class OllamaClient:
         }
         if json_schema is not None:
             payload["format"] = json_schema
+        if options is not None:
+            payload["options"] = options
+        if think is not None:
+            payload["think"] = think
         r = self._http.post("/api/chat", json=payload, timeout=None)
         r.raise_for_status()
         return r.json()["message"]["content"]
