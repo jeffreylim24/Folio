@@ -108,6 +108,12 @@ export async function api<T>(
     headers.set("Content-Type", "application/json");
   }
   const controller = new AbortController();
+  const callerSignal = init.signal;
+  const onCallerAbort = () => controller.abort();
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener("abort", onCallerAbort);
+  }
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
@@ -122,9 +128,9 @@ export async function api<T>(
         signal: controller.signal,
       });
     } catch {
-      throw timedOut
-        ? new EngineError("timeout", TIMEOUT_MESSAGE)
-        : new EngineError("network", NETWORK_MESSAGE);
+      if (timedOut) throw new EngineError("timeout", TIMEOUT_MESSAGE);
+      if (callerSignal?.aborted) throw new DOMException("The request was aborted.", "AbortError");
+      throw new EngineError("network", NETWORK_MESSAGE);
     }
     if (!res.ok) throw await toEngineError(res);
     return (await res.json()) as T;
@@ -135,6 +141,7 @@ export async function api<T>(
     throw e;
   } finally {
     clearTimeout(timer);
+    callerSignal?.removeEventListener("abort", onCallerAbort);
   }
 }
 
