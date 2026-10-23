@@ -20,7 +20,7 @@ type View =
   | { kind: "didnt-start" }
   | { kind: "not-installed" }
   | { kind: "outdated"; version: string | null; updatable: boolean }
-  | { kind: "installing"; job: Job; status: InstallStatus | null }
+  | { kind: "installing"; job: Job; polling: boolean; status: InstallStatus | null }
   | { kind: "install-error"; job: Job; message: string };
 
 const MIN_VERSION = "0.32.12";
@@ -88,25 +88,41 @@ export function OllamaStep({ position, onDone, onUseApiKey }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Each attempt gets a number; answers from an earlier attempt are dropped.
+  const generation = useRef(0);
+  const jobRef = useRef<Job>("install");
   const run = async (job: Job) => {
-    setView({ kind: "installing", job, status: null });
+    const mine = ++generation.current;
+    jobRef.current = job;
+    // No polling until the request returns: until then the engine may still
+    // be reporting the previous attempt.
+    setView({ kind: "installing", job, polling: false, status: null });
     try {
       await api(job === "update" ? "/setup/ollama/update" : "/setup/ollama/install", {
         method: "POST",
       });
+      if (!alive.current || mine !== generation.current) return;
+      setView((v) => (v.kind === "installing" ? { ...v, polling: true } : v));
     } catch (e) {
-      if (alive.current) setView({ kind: "install-error", job, message: messageOf(e) });
+      if (alive.current && mine === generation.current) {
+        setView({ kind: "install-error", job, message: messageOf(e) });
+      }
     }
   };
 
-  // Answers only count while the screen is still showing the install.
   const whileInstalling = (next: (job: Job) => View) => (v: View) =>
     v.kind === "installing" ? next(v.job) : v;
   const pollInstall = async () => {
+    const mine = generation.current;
+    const stale = () => !alive.current || mine !== generation.current;
     try {
       const status = await api<InstallStatus>("/setup/ollama/install");
-      if (!alive.current) return;
-      if (status.state === "done") return finish();
+      if (stale()) return;
+      if (status.state === "done") {
+        // An update only counts once Ollama reports running and up to date.
+        if (jobRef.current === "update") return void (await check());
+        return finish();
+      }
       if (status.state === "error") {
         return setView(
           whileInstalling((job) => ({
@@ -116,14 +132,16 @@ export function OllamaStep({ position, onDone, onUseApiKey }: Props) {
           })),
         );
       }
-      setView(whileInstalling((job) => ({ kind: "installing", job, status })));
+      setView(
+        whileInstalling((job) => ({ kind: "installing", job, polling: true, status })),
+      );
     } catch (e) {
-      if (alive.current) {
+      if (!stale()) {
         setView(whileInstalling((job) => ({ kind: "install-error", job, message: messageOf(e) })));
       }
     }
   };
-  usePoll(pollInstall, view.kind === "installing");
+  usePoll(pollInstall, view.kind === "installing" && view.polling);
 
   if (view.kind === "checking" || view.kind === "starting") {
     return (

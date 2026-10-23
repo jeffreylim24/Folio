@@ -17,6 +17,9 @@ const status = (over: Record<string, unknown>) => ({
   ...over,
 });
 
+const outdatedStatus = (over: Record<string, unknown> = {}) =>
+  status({ running: true, outdated: true, updatable: true, version: "0.30.0", ...over });
+
 const settle = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 const click = (name: string) =>
   act(async () => { screen.getByRole("button", { name }).click(); });
@@ -172,7 +175,7 @@ describe("OllamaStep", () => {
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores a poll answer that arrives after the install failed", async () => {
+  it("does not poll until the install request has returned", async () => {
     const polls: Array<(r: Response) => void> = [];
     let failInstall: (r: Response) => void = () => {};
     const ok = (body: object, st = 200) => new Response(JSON.stringify(body), { status: st });
@@ -187,12 +190,109 @@ describe("OllamaStep", () => {
     render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
     await settle();
     await click("Install Ollama");
-    await settle(1000); // a poll goes out while the install request is open
-    expect(polls).toHaveLength(1);
+    await settle(3000);
+    expect(polls).toHaveLength(0);
     await act(async () => { failInstall(ok({ detail: "Install is unavailable." }, 400)); });
     expect(screen.getByRole("alert").textContent).toBe("Install is unavailable.");
-    await act(async () => { polls[0](ok({ state: "downloading", progress: 0.5, message: null })); });
-    expect(screen.getByRole("alert").textContent).toBe("Install is unavailable.");
+    await settle(3000);
+    expect(polls).toHaveLength(0);
+  });
+
+  it("does not show the previous attempt's error after Retry", async () => {
+    let attempt = 0;
+    let posted = 0;
+    const fetchMock = stubFetch({
+      "GET /setup/ollama": { body: outdatedStatus() },
+      "POST /setup/ollama/update": () => {
+        posted += 1;
+        return { status: 202, body: { started: true } };
+      },
+      "GET /setup/ollama/install": () => {
+        // Server state is stale ("error") until a new update has been posted.
+        attempt = posted;
+        return attempt < 2
+          ? { body: { state: "error", progress: 0, message: "The update failed." } }
+          : { body: { state: "downloading", progress: 0.2, message: null } };
+      },
+    });
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
+    await settle();
+    await click("Update Ollama");
+    await settle(1000);
+    expect(screen.getByRole("alert").textContent).toBe("The update failed.");
+    await click("Retry");
+    await settle(1000);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText(/20%/)).toBeTruthy();
+    expect(calls(fetchMock, "POST /setup/ollama/update")).toHaveLength(2);
+  });
+
+  it("re-checks Ollama after an update and only then moves on", async () => {
+    let outdated = true;
+    const onDone = vi.fn();
+    const fetchMock = stubFetch({
+      "GET /setup/ollama": () => ({ body: outdatedStatus({ outdated }) }),
+      "POST /setup/ollama/update": { status: 202, body: { started: true } },
+      "GET /setup/ollama/install": () => {
+        outdated = false;
+        return { body: { state: "done", progress: 1, message: null } };
+      },
+    });
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={onDone} />);
+    await settle();
+    await click("Update Ollama");
+    await settle(1000);
+    await settle();
+    expect(calls(fetchMock, "GET /setup/ollama")).toHaveLength(2);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays blocked if Ollama is still outdated after the update finishes", async () => {
+    const onDone = vi.fn();
+    stubFetch({
+      "GET /setup/ollama": { body: outdatedStatus() },
+      "POST /setup/ollama/update": { status: 202, body: { started: true } },
+      "GET /setup/ollama/install": { body: { state: "done", progress: 1, message: null } },
+    });
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={onDone} />);
+    await settle();
+    await click("Update Ollama");
+    await settle(1000);
+    await settle();
+    expect(onDone).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Ollama needs an update" })).toBeTruthy();
+  });
+
+  it("moves on from Check again once Ollama is up to date", async () => {
+    let outdated = true;
+    const onDone = vi.fn();
+    stubFetch({ "GET /setup/ollama": () => ({ body: outdatedStatus({ updatable: false, outdated }) }) });
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={onDone} />);
+    await settle();
+    outdated = false;
+    await click("Check again");
+    await settle();
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the engine's message when the update is refused, with Retry and API key", async () => {
+    const fetchMock = stubFetch({
+      "GET /setup/ollama": { body: outdatedStatus() },
+      "POST /setup/ollama/update": {
+        status: 400,
+        body: { detail: "Folio can only update Ollama installed the standard way." },
+      },
+    });
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
+    await settle();
+    await click("Update Ollama");
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Folio can only update Ollama installed the standard way.",
+    );
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Use an API key instead" })).toBeTruthy();
+    await click("Retry");
+    expect(calls(fetchMock, "POST /setup/ollama/update")).toHaveLength(2);
   });
 
   it("offers an API key instead while Ollama is not installed or didn't start", async () => {
@@ -233,8 +333,6 @@ describe("OllamaStep", () => {
     vi.restoreAllMocks();
   });
 
-  const outdatedStatus = (over: Record<string, unknown> = {}) =>
-    status({ running: true, outdated: true, updatable: true, version: "0.30.0", ...over });
 
   it("blocks an outdated standard install and offers an update", async () => {
     const onDone = vi.fn();
@@ -260,7 +358,7 @@ describe("OllamaStep", () => {
     ];
     let i = 0;
     const fetchMock = stubFetch({
-      "GET /setup/ollama": { body: outdatedStatus() },
+      "GET /setup/ollama": () => ({ body: outdatedStatus({ outdated: i < states.length }) }),
       "POST /setup/ollama/update": { status: 202, body: { started: true } },
       "GET /setup/ollama/install": () => ({ body: states[Math.min(i++, states.length - 1)] }),
     });
@@ -279,6 +377,7 @@ describe("OllamaStep", () => {
     expect(screen.getByText("Starting Ollama…")).toBeTruthy();
     expect(onDone).not.toHaveBeenCalled();
     await settle(1000);
+    await settle();
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 
