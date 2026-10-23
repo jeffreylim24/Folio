@@ -13,6 +13,20 @@ The only times Folio uses the internet:
 
 If you use an API key, it is stored in your operating system's keychain, never in a plain file.
 
+## Minimum requirements
+
+These numbers are provisional, being measured.
+
+To run the AI on your own computer you need:
+
+- A Mac with about 16 GB of memory, or on Windows either 16 GB of RAM or an NVIDIA graphics card with 8 GB.
+- About 10 GB of free disk space for the smallest model (more for larger ones).
+- macOS or Windows.
+
+Any computer that runs Folio can use your own API key instead.
+
+Folio recommends a model that fits your computer and lets you pick a different one. Below these specs, Folio warns you before downloading, and the computer may become very slow or crash.
+
 ## Download and install
 
 Get the latest installer from the [Releases page](https://github.com/jeffreylim24/Folio/releases):
