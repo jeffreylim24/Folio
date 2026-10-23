@@ -1,7 +1,7 @@
 import subprocess
 
 from folio_engine import hardware
-from folio_engine.hardware import HardwareInfo, memory_budget_gb
+from folio_engine.hardware import HardwareInfo, usable_memory_gb
 
 
 def hw(**kw):
@@ -17,31 +17,32 @@ def hw(**kw):
     return HardwareInfo(**base)
 
 
-def test_budget_apple_silicon():
-    assert memory_budget_gb(hw()) == 16.8
+def test_usable_apple_silicon():
+    assert usable_memory_gb(HardwareInfo("macos", "arm64", 24, True, None, 500)) == 16.1
 
 
-def test_budget_nvidia():
-    h = hw(os="windows", arch="AMD64", apple_silicon=False, gpu_vram_gb=12)
-    assert memory_budget_gb(h) == 10.8
+def test_usable_nvidia():
+    h = HardwareInfo("windows", "AMD64", 32, False, 12, 500)
+    assert usable_memory_gb(h) == 10.8
 
 
-def test_budget_nvidia_too_small_falls_back_to_ram():
-    h = hw(os="windows", apple_silicon=False, gpu_vram_gb=4, total_ram_gb=32)
-    assert memory_budget_gb(h) == 16.0
+def test_usable_small_nvidia_falls_back_to_ram():
+    h = HardwareInfo("windows", "AMD64", 32, False, 4, 500)
+    assert usable_memory_gb(h) == 16.0
 
 
-def test_budget_plain_ram():
+def test_usable_plain_ram():
     h = hw(os="windows", apple_silicon=False, total_ram_gb=32)
-    assert memory_budget_gb(h) == 16.0
+    assert usable_memory_gb(h) == 16.0
 
 
-def _capture_run(monkeypatch):
+def _capture_run(monkeypatch, stdout="NVIDIA GeForce RTX 4060, 8192\n"):
     seen = {}
 
     def fake_run(cmd, **kwargs):
         seen.update(kwargs)
-        return subprocess.CompletedProcess(cmd, 0, stdout="8192\n")
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout)
 
     monkeypatch.setattr(hardware.subprocess, "run", fake_run)
     return seen
@@ -50,12 +51,39 @@ def _capture_run(monkeypatch):
 def test_nvidia_smi_runs_without_console_window_on_windows(monkeypatch):
     seen = _capture_run(monkeypatch)
     monkeypatch.setattr(hardware.sys, "platform", "win32")
-    assert hardware._nvidia_vram_gb() == 8
+    assert hardware._nvidia_gpu() == ("NVIDIA GeForce RTX 4060", 8)
     assert seen["creationflags"] == hardware.CREATE_NO_WINDOW == 0x08000000
+    assert "--query-gpu=name,memory.total" in seen["cmd"]
 
 
 def test_nvidia_smi_has_no_creationflags_elsewhere(monkeypatch):
     seen = _capture_run(monkeypatch)
     monkeypatch.setattr(hardware.sys, "platform", "darwin")
-    assert hardware._nvidia_vram_gb() == 8
+    assert hardware._nvidia_gpu() == ("NVIDIA GeForce RTX 4060", 8)
     assert seen.get("creationflags", 0) == 0
+
+
+def test_nvidia_smi_largest_gpu_wins(monkeypatch):
+    _capture_run(monkeypatch, "Small GPU, 4096\nBig GPU, 24576\n")
+    assert hardware._nvidia_gpu() == ("Big GPU", 24)
+
+
+def test_nvidia_smi_missing_returns_none(monkeypatch):
+    def boom(cmd, **kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(hardware.subprocess, "run", boom)
+    assert hardware._nvidia_gpu() is None
+
+
+def test_mac_chip(monkeypatch):
+    _capture_run(monkeypatch, "Apple M5\n")
+    assert hardware._mac_chip() == "Apple M5"
+
+
+def test_mac_chip_failure_is_none(monkeypatch):
+    def boom(cmd, **kwargs):
+        raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(hardware.subprocess, "run", boom)
+    assert hardware._mac_chip() is None
