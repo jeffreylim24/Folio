@@ -35,7 +35,7 @@ def watch_parent(
     while max_checks is None or checks < max_checks:
         try:
             alive = exists(pid)
-        except Exception as e:  # never die silently; assume the parent lives
+        except Exception as e:  # noqa: BLE001 - assume the parent lives
             print(f"parent watchdog check failed: {e!r}", file=sys.stderr, flush=True)
             alive = True
         if not alive:
