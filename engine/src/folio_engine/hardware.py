@@ -57,7 +57,7 @@ def _nvidia_gpu() -> tuple[str, float] | None:
         for line in out.splitlines():
             if line.strip():
                 name, _, mib = line.rpartition(",")
-                gpus.append((name.strip(), float(mib) / 1024))
+                gpus.append((name.strip(), round(float(mib) / 1024, 1)))
         return max(gpus, key=lambda g: g[1])
     except (OSError, subprocess.SubprocessError, ValueError):
         return None

@@ -394,3 +394,10 @@ def test_empty_reply_does_not_complete_setup(tmp_path):
     r = client.post("/setup/test", headers=AUTH)
     assert r.status_code == 400 and r.json()["kind"] == "other"
     assert app.state.config.load().setup_complete is False
+
+
+def test_pull_retry_rejects_uncatalogued_model(tmp_path):
+    app = create_app("secret", tmp_path)
+    app.state.config.save(Settings("ollama", "qwen3:14b", None, False))
+    r = TestClient(app).post("/setup/pull/retry", headers=AUTH)
+    assert r.status_code == 400

@@ -87,3 +87,8 @@ def test_mac_chip_failure_is_none(monkeypatch):
 
     monkeypatch.setattr(hardware.subprocess, "run", boom)
     assert hardware._mac_chip() is None
+
+
+def test_nvidia_vram_is_rounded_for_display(monkeypatch):
+    _capture_run(monkeypatch, "NVIDIA GeForce RTX 4070, 12282\n")
+    assert hardware._nvidia_gpu() == ("NVIDIA GeForce RTX 4070", 12.0)
