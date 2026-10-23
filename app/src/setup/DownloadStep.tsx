@@ -136,12 +136,17 @@ export function DownloadStep({ position, onDone, onUseApiKey, randomIndex = defa
   }, [showTips]);
 
   return (
-    <StepShell step={position} title="Downloading your AI model" live="polite">
+    <StepShell step={position} title="Downloading your AI model">
       {failure ? (
         <>
           <p role="alert" className="error">
             {failure}
           </p>
+          {pull?.state === "error" && known && (
+            <div className="download-meta">
+              <span>{percent}%</span>
+            </div>
+          )}
           <button type="button" className="primary" onClick={() => void retry()}>
             Retry
           </button>
@@ -152,7 +157,7 @@ export function DownloadStep({ position, onDone, onUseApiKey, randomIndex = defa
           <ProgressBar value={fraction} label="Download progress" />
           <div className="download-meta">
             <span>{percent}%</span>
-            {resuming && <span>Resuming…</span>}
+            {resuming && <span role="status">Resuming…</span>}
           </div>
           {known && !resuming && (
             <p className="download-meta">
@@ -161,7 +166,7 @@ export function DownloadStep({ position, onDone, onUseApiKey, randomIndex = defa
             </p>
           )}
           {stalled && (
-            <p className="warning paused-note">
+            <p role="status" className="warning paused-note">
               Download paused. Check your internet connection. It'll pick up where it left off when you're back online.
             </p>
           )}

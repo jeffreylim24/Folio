@@ -93,7 +93,7 @@ export function SetupWizard({ onEngineProblem }: { onEngineProblem: (message: st
           <ReadyStep
             position={position}
             onDone={refresh}
-            onChooseModel={usesApiKey ? useApiKey : undefined}
+            onChooseModel={usesApiKey ? useApiKey : () => setOverride("model")}
             onChangeProvider={changeProvider}
           />
         )}

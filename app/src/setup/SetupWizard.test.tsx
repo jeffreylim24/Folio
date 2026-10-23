@@ -117,9 +117,46 @@ describe("SetupWizard routing", () => {
     });
     wizard();
     await screen.findByRole("alert");
-    expect(screen.queryByRole("button", { name: "Choose a different model" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Change how Folio's AI runs" }));
     expect(await screen.findByText("How should Folio's AI run?")).toBeTruthy();
+  });
+
+  it("lets a local user pick a different model after the test fails", async () => {
+    stubFetch({
+      "GET /setup/state": {
+        body: rawState({
+          settings: { provider: "ollama", model: "qwen3:8b", base_url: null, setup_complete: false },
+          pull: { state: "done", model: "qwen3:8b", completed_bytes: 1, total_bytes: 1, error: null },
+        }),
+      },
+      "POST /setup/test": { status: 400, body: { kind: "network", message: "Couldn't reach Ollama." } },
+    });
+    wizard();
+    await screen.findByRole("alert");
+    await userEvent.click(screen.getByRole("button", { name: "Choose a different model" }));
+    expect(await screen.findByRole("heading", { name: "Choose your AI model" })).toBeTruthy();
+  });
+
+  it("shows the update screen when Ollama starts but turns out to be too old", async () => {
+    let reads = 0;
+    stubFetch({
+      "GET /setup/state": {
+        body: rawState({
+          settings: { provider: "ollama", model: null, base_url: null, setup_complete: false },
+          ollama: { installed: true, running: false, version: null, app_path: "/x", outdated: false, updatable: true },
+        }),
+      },
+      "GET /setup/ollama": () => ({
+        body:
+          reads++ === 0
+            ? { installed: true, running: false, version: null, app_path: "/x", outdated: false, updatable: true }
+            : { installed: true, running: true, version: "0.30.0", app_path: "/x", outdated: true, updatable: true },
+      }),
+      "POST /setup/ollama/start": { body: { running: true } },
+    });
+    wizard();
+    expect(await screen.findByText("Ollama needs an update")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Update Ollama" })).toBeTruthy();
   });
 
   it("offers an API key instead during the download", async () => {

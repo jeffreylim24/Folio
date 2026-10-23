@@ -57,9 +57,23 @@ export function OllamaStep({ position, onDone, onUseApiKey }: Props) {
   const check = useCallback(async () => {
     setView({ kind: "checking" });
     try {
-      const status = await api<RawStatus & Partial<OllamaStatus>>("/setup/ollama");
+      const read = async () => api<RawStatus & Partial<OllamaStatus>>("/setup/ollama");
+      let status = await read();
       if (!alive.current) return;
       if (!status.installed) return setView({ kind: "not-installed" });
+      if (!status.outdated && !status.running) {
+        setView({ kind: "starting" });
+        const started = await api<{ running: boolean }>(
+          "/setup/ollama/start",
+          { method: "POST" },
+          45_000,
+        );
+        if (!alive.current) return;
+        if (!started.running) return setView({ kind: "didnt-start" });
+        // Whether Ollama is too old is only known once it runs; look again.
+        status = await read();
+        if (!alive.current) return;
+      }
       if (status.outdated) {
         return setView({
           kind: "outdated",
@@ -67,16 +81,7 @@ export function OllamaStep({ position, onDone, onUseApiKey }: Props) {
           updatable: Boolean(status.updatable),
         });
       }
-      if (status.running) return finish();
-      setView({ kind: "starting" });
-      const started = await api<{ running: boolean }>(
-        "/setup/ollama/start",
-        { method: "POST" },
-        45_000,
-      );
-      if (!alive.current) return;
-      if (started.running) finish();
-      else setView({ kind: "didnt-start" });
+      finish();
     } catch (e) {
       if (alive.current) setView({ kind: "install-error", job: "install", message: messageOf(e) });
     }
@@ -207,13 +212,11 @@ export function OllamaStep({ position, onDone, onUseApiKey }: Props) {
     const showPercent = !s || s.state === "downloading";
     const known = showPercent || s?.state === "done";
     return (
-      <StepShell
-        step={position}
-        title={updating ? "Updating Ollama" : "Installing Ollama"}
-        live="polite"
-      >
+      <StepShell step={position} title={updating ? "Updating Ollama" : "Installing Ollama"}>
         <p>
-          {s && INSTALL_LABEL[s.state] ? INSTALL_LABEL[s.state] : "Getting started…"}
+          <span role="status">
+            {s && INSTALL_LABEL[s.state] ? INSTALL_LABEL[s.state] : "Getting started…"}
+          </span>
           {showPercent && ` ${percent}%`}
         </p>
         <ProgressBar

@@ -48,6 +48,20 @@ describe("OllamaStep", () => {
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 
+  it("shows the update screen when Ollama starts but is too old", async () => {
+    let reads = 0;
+    stubFetch({
+      "GET /setup/ollama": () => ({ body: reads++ === 0 ? status({}) : outdatedStatus() }),
+      "POST /setup/ollama/start": { body: { running: true } },
+    });
+    const onDone = vi.fn();
+    render(<OllamaStep position={POSITION} onUseApiKey={() => {}} onDone={onDone} />);
+    await settle();
+    await settle();
+    expect(screen.getByText("Ollama needs an update")).toBeTruthy();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
   it("shows Starting Ollama while it starts", async () => {
     const inner = stubFetch({
       "GET /setup/ollama": { body: status({}) },

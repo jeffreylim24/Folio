@@ -151,6 +151,28 @@ describe("DownloadStep", () => {
     expect(onUseApiKey).toHaveBeenCalledTimes(1);
   });
 
+  it("does not make the whole card a live region, only the status messages", async () => {
+    stubFetch({ "GET /setup/pull": pull("downloading", 2, 3) });
+    const { container } = render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
+    await settle();
+    expect(container.querySelector("[aria-live]")).toBeNull();
+    expect(screen.getByText("66%").closest("[role=status]")).toBeNull();
+    expect(screen.getByTestId("tip").closest("[role=status]")).toBeNull();
+  });
+
+  it("keeps the last percentage visible next to an error", async () => {
+    stubFetch({
+      "GET /setup/pull": {
+        body: { state: "error", completed_bytes: 600, total_bytes: 1000, error: "The download was interrupted." },
+      },
+    });
+    render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} />);
+    await settle();
+    expect(screen.getByRole("alert").textContent).toBe("The download was interrupted.");
+    expect(screen.getByText("60%")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
   it("stalled shows a paused message, keeps the percent, and hides tips and Retry", async () => {
     stubFetch({ "GET /setup/pull": pullX("stalled", 600, 1000) });
     render(<DownloadStep position={POSITION} onUseApiKey={() => {}} onDone={() => {}} randomIndex={() => 0} />);

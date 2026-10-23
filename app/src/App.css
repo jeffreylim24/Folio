@@ -1,7 +1,7 @@
 :root {
   color-scheme: light dark;
   --bg: #f0f0f0; --surface: #ffffff; --surface-2: #f7f4f8; --border: #e4dde7; --border-hi: #d0adc4;
-  --fg: #2a1d36; --muted: #5f5269; --faint: #958a9c; --track: #ece6ef;
+  --fg: #2a1d36; --muted: #5f5269; --faint: #74697c; --track: #ece6ef;
   --accent: #744b93; --accent-ink: #ffffff; --accent-soft: rgba(116,75,147,.07);
   --ok: #736eae; --warn: #c08a44; --warn-soft: rgba(192,138,68,.13); --bad: #b4567a; --bad-soft: rgba(180,86,122,.10);
   --shadow: 0 16px 40px rgba(60,40,80,.09);
@@ -20,8 +20,8 @@
     --accent: #d9a69f; --accent-ink: #2a1c1a; --accent-soft: rgba(217,166,159,.12);
     --ok: #a6addb; --warn: #dea785; --warn-soft: rgba(222,167,133,.15); --bad: #e57f74; --bad-soft: rgba(229,127,116,.15);
     --shadow: 0 24px 60px rgba(8,8,16,.55);
-  
   }
+  .badge.tight { color: var(--warn); }
 }
 
 * {
@@ -314,7 +314,7 @@ button.choice span {
 
 .badge.rec { background: var(--accent); color: var(--accent-ink); }
 .badge.easy { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
-.badge.tight { background: var(--warn-soft); color: var(--warn); }
+.badge.tight { background: var(--warn-soft); color: #7d5210; }
 .badge.no { background: var(--bad-soft); color: var(--bad); }
 
 /* ---- Fit bar ---- */
