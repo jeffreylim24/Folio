@@ -559,3 +559,56 @@ button.choice span {
   .info .grid { grid-template-columns: repeat(2, 1fr); }
   .card { padding: 1.3rem; }
 }
+
+/* ---- Device strip ---- */
+
+.specs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
+.spec {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.7rem 0.9rem;
+  animation: rise 0.5s ease-out both;
+}
+.spec:nth-child(2) { animation-delay: 0.06s; }
+.spec:nth-child(3) { animation-delay: 0.12s; }
+.spec .v { font-size: 1.05rem; font-weight: 600; }
+.spec .s { font-size: 0.78rem; color: var(--muted); }
+
+/* ---- Link-style button and low-spec dialog ---- */
+
+button.linklike {
+  display: inline;
+  padding: 0;
+  color: var(--muted);
+  text-decoration: underline;
+  border-radius: 4px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(10, 10, 20, 0.5);
+}
+
+.dialog {
+  max-width: 26rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+  animation: rise 0.25s ease-out both;
+}
+
+.dialog h2 { margin: 0 0 0.6rem; font-size: 1.15rem; }
+.dialog p { margin: 0 0 1rem; color: var(--muted); }
+.dialog-actions { display: flex; flex-direction: column; gap: 0.4rem; }
+
+@media (max-width: 560px) {
+  .specs { grid-template-columns: 1fr; }
+}

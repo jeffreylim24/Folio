@@ -71,7 +71,7 @@ describe("SetupWizard routing", () => {
         provider = "ollama";
         return { body: { ok: true } };
       },
-      "GET /setup/hardware": { body: { hardware: {}, recommendation: { model: null, reason: "memory", message: "Not enough memory.", est_minutes: null, free_disk_needed_gb: null } } },
+      "GET /setup/hardware": { body: { device: { total_ram_gb: 8, usable_gb: 4, free_disk_gb: 100, chip_label: "Chip", chip_note: "" }, recommended: null, reason: "memory", message: "Not enough memory.", tiers: [], models: [] } },
     });
     wizard();
     await userEvent.click(await screen.findByRole("button", { name: /Run privately/ }));
@@ -148,7 +148,7 @@ describe("SetupWizard routing", () => {
   it("can switch to the API-key path without an engine call", async () => {
     const fetchMock = stubFetch({
       "GET /setup/state": { body: rawState({ settings: { provider: "ollama", model: null, base_url: null, setup_complete: false } }) },
-      "GET /setup/hardware": { body: { hardware: {}, recommendation: { model: null, reason: "memory", message: "Not enough memory.", est_minutes: null, free_disk_needed_gb: null } } },
+      "GET /setup/hardware": { body: { device: { total_ram_gb: 8, usable_gb: 4, free_disk_gb: 100, chip_label: "Chip", chip_note: "" }, recommended: null, reason: "memory", message: "Not enough memory.", tiers: [], models: [] } },
     });
     wizard();
     await userEvent.click(await screen.findByRole("button", { name: "Use an API key instead" }));
