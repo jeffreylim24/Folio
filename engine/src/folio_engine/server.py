@@ -54,6 +54,7 @@ def create_app(token: str, data_dir: Path, **overrides: Any) -> FastAPI:
             app.state.ollama_client,
             app.state.config,
             lambda: free_disk_gb(ollama_models_dir()),
+            progress_path=data_dir / "pull-progress.json",
         )
 
     @app.exception_handler(RequestValidationError)

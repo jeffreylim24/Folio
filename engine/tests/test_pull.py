@@ -297,12 +297,15 @@ def test_retry_with_partial_bytes_under_low_disk_proceeds(tmp_path):
     # model is already on disk, so retry must not demand the full size again.
     client = FakeClient([p("pulling a", "a", 100, 80), httpx.ReadError("boom")])
     mgr = make(tmp_path, client, free=3, model="qwen3.5:9b-q4_K_M")
+    mgr._progress_path = tmp_path / "pull-progress.json"
     tc = TestClient(
         create_app("secret", tmp_path, pull_manager=mgr, ollama_client=client)
     )
     mgr.start("qwen3.5:9b-q4_K_M", None)
     mgr.join(5)
     assert mgr.status().state == "error"
+    # Ollama's own numbers are tiny here; record that 6.0 GB is on disk.
+    mgr._write_progress("qwen3.5:9b-q4_K_M", 6 * 1024**3, int(6.6 * 1024**3))
     client.events = [p("success")]
     assert tc.post("/setup/pull/retry", headers=AUTH).status_code == 202
     mgr.join(5)
@@ -398,3 +401,175 @@ def test_resume_skips_uncatalogued_model(tmp_path):
     mgr.resume_if_needed()
     mgr.join(5)
     assert client.pulls == [] and mgr.status().state == "idle"
+
+
+GB = 1024**3
+M = "qwen3.5:9b-q4_K_M"
+
+
+class Clock:
+    def __init__(self):
+        self.now = [1000.0]
+
+    def __call__(self):
+        return self.now[0]
+
+    def advance(self, s):
+        self.now[0] += s
+
+
+class HoldingClient(FakeClient):
+    """Yields its events, then holds the stream open like a stalled Ollama.
+
+    `step` is set once all queued events have been consumed by the manager.
+    """
+
+    def __init__(self, events=()):
+        super().__init__(events)
+        self.release = threading.Event()
+        self.step = threading.Event()
+
+    def feed(self, *events):
+        self.step.clear()
+        self.events.extend(events)
+        self.pending.set()
+        assert self.step.wait(5)
+
+    def pull(self, model):
+        self.pulls.append(model)
+        self.pending = threading.Event()
+        sent = 0
+        while not self.release.is_set():
+            while sent < len(self.events):
+                e = self.events[sent]
+                sent += 1
+                yield e
+            self.step.set()
+            self.pending.wait(0.01)
+            self.pending.clear()
+
+
+def held(tmp_path, events=(), progress=True, free=100.0, seed=None):
+    clock = Clock()
+    client = HoldingClient(events)
+    path = tmp_path / "pull-progress.json"
+    if seed:
+        import json
+
+        path.write_text(json.dumps(seed))
+    config = ConfigStore(tmp_path / "settings.json")
+    mgr = PullManager(
+        client,
+        config,
+        lambda: free,
+        progress_path=path if progress else None,
+        clock=clock,
+    )
+    return mgr, client, clock, path
+
+
+def finish(mgr, client):
+    client.release.set()
+    mgr.join(5)
+
+
+def test_stalled_after_60s_without_progress(tmp_path):
+    mgr, client, clock, _ = held(tmp_path, [p("pulling a", "a", 100, 10)])
+    mgr.start(M, 6.6)
+    assert client.step.wait(5)
+    clock.advance(59)
+    assert mgr.status().state == "downloading"
+    clock.advance(1)
+    assert mgr.status().state == "stalled"
+    finish(mgr, client)
+
+
+def test_stall_clears_when_bytes_move(tmp_path):
+    mgr, client, clock, _ = held(tmp_path, [p("pulling a", "a", 100, 10)])
+    mgr.start(M, 6.6)
+    assert client.step.wait(5)
+    clock.advance(120)
+    assert mgr.status().state == "stalled"
+    client.feed(p("pulling a", "a", 100, 20))
+    assert mgr.status().state == "downloading"
+    finish(mgr, client)
+
+
+def test_resume_seeds_persisted_progress(tmp_path):
+    seed = {"model": M, "completed_bytes": 600, "total_bytes": 1000}
+    mgr, client, _, _ = held(tmp_path, seed=seed)
+    mgr.start(M, 6.6)
+    assert client.step.wait(5)
+    s = mgr.status()
+    assert (s.completed_bytes, s.total_bytes, s.resuming) == (600, 1000, True)
+    finish(mgr, client)
+
+
+def test_resume_never_shows_lower_progress(tmp_path):
+    seed = {"model": M, "completed_bytes": 600, "total_bytes": 1000}
+    mgr, client, _, _ = held(tmp_path, [p("pulling a", "a", 1000, 100)], seed=seed)
+    mgr.start(M, 6.6)
+    assert client.step.wait(5)
+    s = mgr.status()
+    assert (s.completed_bytes, s.total_bytes, s.resuming) == (600, 1000, True)
+    client.feed(p("pulling a", "a", 1000, 700))
+    s = mgr.status()
+    assert (s.completed_bytes, s.total_bytes, s.resuming) == (700, 1000, False)
+    finish(mgr, client)
+
+
+def test_seed_for_other_model_is_ignored(tmp_path):
+    seed = {"model": "other:1b", "completed_bytes": 600, "total_bytes": 1000}
+    mgr, client, _, _ = held(tmp_path, seed=seed)
+    mgr.start(M, 6.6)
+    assert client.step.wait(5)
+    s = mgr.status()
+    assert (s.completed_bytes, s.total_bytes, s.resuming) == (0, 0, False)
+    finish(mgr, client)
+
+
+def test_progress_file_written_and_cleared(tmp_path):
+    import json
+
+    mgr, client, clock, path = held(tmp_path, [p("pulling a", "a", 100, 10)])
+    mgr.start(M, 6.6)
+    assert client.step.wait(5)
+    clock.advance(5)
+    client.feed(p("pulling a", "a", 100, 40))
+    assert json.loads(path.read_text()) == {
+        "model": M,
+        "completed_bytes": 40,
+        "total_bytes": 100,
+    }
+    client.feed(p("pulling a", "a", 100, 90))  # within 5 s: not rewritten
+    assert json.loads(path.read_text())["completed_bytes"] == 40
+    client.events.append(p("success"))  # generator ends; nothing to wait on
+    mgr.join(5)
+    assert mgr.status().state == "done"
+    assert not path.exists()
+    finish(mgr, client)
+
+
+def test_disk_check_uses_remaining_bytes(tmp_path):
+    seed = {"model": M, "completed_bytes": 9 * GB, "total_bytes": int(9.3 * GB)}
+    mgr, client, _, _ = held(tmp_path, free=3, seed=seed)
+    mgr.start(M, 9.3)
+    assert mgr.status().state != "error"
+    finish(mgr, client)
+
+    (tmp_path / "fresh").mkdir()
+    mgr, client, _, _ = held(tmp_path / "fresh", free=3)
+    mgr.start(M, 9.3)
+    s = mgr.status()
+    assert s.state == "error" and "Free up 8.3 GB" in s.error
+
+
+def test_retry_passes_catalog_size(tmp_path):
+    client = FakeClient([p("success")])
+    mgr = make(tmp_path, client, free=3, model="qwen3.5:9b-q4_K_M")
+    tc = TestClient(
+        create_app("secret", tmp_path, pull_manager=mgr, ollama_client=client)
+    )
+    tc.post("/setup/pull/retry", headers=AUTH)
+    mgr.join(5)
+    assert client.pulls == [] and "Free up" in mgr.status().error

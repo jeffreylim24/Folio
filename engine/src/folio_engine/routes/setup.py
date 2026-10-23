@@ -137,11 +137,12 @@ def _pull_status(pulls):
 
 @router.post("/pull/retry", status_code=202)
 def post_pull_retry(request: Request) -> dict[str, bool]:
-    model = request.app.state.config.load().model
-    if not model or find_model(model) is None:
+    tag = request.app.state.config.load().model
+    model = find_model(tag) if tag else None
+    if model is None:
         raise HTTPException(400, "No model has been chosen yet.")
-    # No full-size disk check here: part of the model may already be on disk.
-    request.app.state.pull_manager.start(model, None)
+    # The disk check counts only the bytes still to download.
+    request.app.state.pull_manager.start(model.tag, model.download_gb)
     return {"started": True}
 
 

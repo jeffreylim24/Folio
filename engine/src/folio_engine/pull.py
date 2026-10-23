@@ -1,6 +1,10 @@
+import json
+import os
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 import httpx
@@ -32,11 +36,16 @@ def _ollama_error_text(response: httpx.Response) -> str:
 
 @dataclass
 class PullStatus:
-    state: Literal["idle", "downloading", "done", "error"]
+    state: Literal["idle", "downloading", "stalled", "done", "error"]
     model: str | None
     completed_bytes: int
     total_bytes: int
     error: str | None
+    resuming: bool = False
+
+
+GB = 1024**3
+PROGRESS_WRITE_EVERY_S = 5.0
 
 
 class PullManager:
@@ -45,10 +54,20 @@ class PullManager:
         client: OllamaClient,
         config: ConfigStore,
         free_disk_gb: Callable[[], float],
+        progress_path: Path | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        stall_after_s: float = 60.0,
     ):
         self._client = client
         self._config = config
         self._free_disk_gb = free_disk_gb
+        self._progress_path = progress_path
+        self._clock = clock
+        self._stall_after_s = stall_after_s
+        self._last_progress_at = 0.0
+        self._last_fresh_bytes = 0
+        self._last_write_at: float | None = None
+        self._seed_bytes = 0
         self._lock = threading.Lock()
         self._status = PullStatus("idle", None, 0, 0, None)
         self._thread: threading.Thread | None = None
@@ -56,7 +75,47 @@ class PullManager:
 
     def status(self) -> PullStatus:
         with self._lock:
-            return PullStatus(**self._status.__dict__)
+            status = PullStatus(**self._status.__dict__)
+            if (
+                status.state == "downloading"
+                and self._clock() - self._last_progress_at >= self._stall_after_s
+            ):
+                status.state = "stalled"
+            return status
+
+    def _read_progress(self, model: str) -> tuple[int, int]:
+        """Last saved (completed, total) bytes for this model, else (0, 0)."""
+        if self._progress_path is None:
+            return 0, 0
+        try:
+            data = json.loads(self._progress_path.read_text())
+            if data["model"] == model:
+                return int(data["completed_bytes"]), int(data["total_bytes"])
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        return 0, 0
+
+    def _write_progress(self, model: str, completed: int, total: int) -> None:
+        if self._progress_path is None:
+            return
+        try:
+            tmp = self._progress_path.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps(
+                    {"model": model, "completed_bytes": completed, "total_bytes": total}
+                )
+            )
+            os.replace(tmp, self._progress_path)
+        except OSError:
+            pass  # progress memory is best-effort
+
+    def _clear_progress(self) -> None:
+        if self._progress_path is None:
+            return
+        try:
+            self._progress_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     def join(self, timeout: float | None = None) -> None:
         """Wait for a background resume check, then for the pull itself."""
@@ -72,11 +131,13 @@ class PullManager:
         since part of the model may already be on disk (Ollama reports its own
         disk-full error if space really runs out).
         """
+        seeded, seeded_total = self._read_progress(model)
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return
             if size_gb is not None:
-                needed = size_gb + DISK_HEADROOM_GB
+                remaining_gb = max(size_gb - seeded / GB, 0)
+                needed = remaining_gb + DISK_HEADROOM_GB
                 free = self._free_disk_gb()
                 if free < needed:
                     short = round(needed - free, 1)
@@ -89,7 +150,13 @@ class PullManager:
                         f"Free up {short:g} GB and try again.",
                     )
                     return
-            self._status = PullStatus("downloading", model, 0, 0, None)
+            self._status = PullStatus(
+                "downloading", model, seeded, seeded_total, None, seeded > 0
+            )
+            self._seed_bytes = seeded
+            self._last_progress_at = self._clock()
+            self._last_fresh_bytes = 0
+            self._last_write_at = None
             self._thread = threading.Thread(
                 target=self._run, args=(model,), daemon=True
             )
@@ -145,14 +212,30 @@ class PullManager:
                 if event.status == "success":
                     with self._lock:
                         self._status.state = "done"
+                    self._clear_progress()
                     return
                 if event.digest and event.total:
                     layers[event.digest] = (event.total, event.completed or 0)
+                    total = sum(t for t, _ in layers.values())
+                    fresh = sum(c for _, c in layers.values())
                     with self._lock:
-                        self._status.total_bytes = sum(t for t, _ in layers.values())
-                        self._status.completed_bytes = sum(
-                            c for _, c in layers.values()
+                        now = self._clock()
+                        if fresh > self._last_fresh_bytes:
+                            self._last_fresh_bytes = fresh
+                            self._last_progress_at = now
+                        if self._status.resuming and fresh < self._seed_bytes:
+                            continue  # keep showing the saved, higher numbers
+                        self._status.resuming = False
+                        self._status.total_bytes = total
+                        self._status.completed_bytes = fresh
+                        due = (
+                            self._last_write_at is None
+                            or now - self._last_write_at >= PROGRESS_WRITE_EVERY_S
                         )
+                        if due:
+                            self._last_write_at = now
+                    if due:
+                        self._write_progress(model, fresh, total)
             self._set_error(MSG_INTERRUPTED)
         except OllamaError as e:
             self._set_error(f"Ollama couldn't download the model: {e}")
