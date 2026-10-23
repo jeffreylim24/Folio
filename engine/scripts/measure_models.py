@@ -1,0 +1,175 @@
+"""Measure how much memory each catalog model really uses in Ollama.
+
+Developer tool, not shipped in the app. For each model it pulls the weights,
+sends one ~10k-token resume-style prompt at Folio's context size, then reads
+how much memory Ollama holds for it and how fast it generated.
+
+Run (Ollama must be running; pulls are multi-GB downloads):
+
+    cd engine
+    uv run python scripts/measure_models.py                  # the three tier models
+    uv run python scripts/measure_models.py qwen3.5:9b-q4_K_M --delete  # chosen tags, then remove them
+
+Options: --delete removes each model after measuring (saves disk);
+--out FILE sets the JSON output path (default measure-results.json).
+
+What to send back: the Markdown table printed at the end, or the JSON file.
+"""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import httpx
+
+from folio_engine.catalog import MODEL_CATALOG, find_model
+from folio_engine.ollama.client import OllamaClient
+
+_RESUME_BLOCK = (
+    "Jane Doe, Senior Software Engineer at Acme Corp (2019-2024). Led a team of "
+    "six building payment APIs in Python and Go; cut p95 latency by 40% and "
+    "mentored four junior engineers. Skills: Python, Go, SQL, Kubernetes, AWS. "
+    "Education: BSc Computer Science, State University, 2015-2019.\n"
+)
+_QUESTION = "List the job titles as JSON."
+_PROMPT_CHARS = 35_000
+_GB = 1024**3
+
+
+def build_prompt() -> str:
+    """About 35 000 characters (~10k tokens) of resume-like text plus the question."""
+    reps = _PROMPT_CHARS // len(_RESUME_BLOCK) + 1
+    return _RESUME_BLOCK * reps + "\n" + _QUESTION
+
+
+def row_from(tag: str, ps_entry: dict, chat_body: dict) -> dict:
+    size = ps_entry.get("size", 0)
+    vram = ps_entry.get("size_vram", 0)
+    eval_ns = chat_body.get("eval_duration", 0)
+    tokens = chat_body.get("eval_count", 0)
+    return {
+        "tag": tag,
+        "loaded_gb": round(size / _GB, 1),
+        "gpu_percent": round(100 * vram / size) if size else 0,
+        "prompt_tokens": chat_body.get("prompt_eval_count", 0),
+        "tokens_per_s": round(tokens / (eval_ns / 1e9), 1) if eval_ns else 0.0,
+    }
+
+
+def format_table(rows: list[dict]) -> str:
+    lines = [
+        "| Model | Loaded GB | GPU % | Prompt tokens | Tokens/s |",
+        "|---|---|---|---|---|",
+    ]
+    for r in rows:
+        if "error" in r:
+            lines.append(f"| {r['tag']} | ERROR: {r['error']} | | | |")
+            continue
+        lines.append(
+            f"| {r['tag']} | {r['loaded_gb']} | {r['gpu_percent']} "
+            f"| {r['prompt_tokens']} | {r['tokens_per_s']} |"
+        )
+    return "\n".join(lines)
+
+
+def _pull(client: OllamaClient, tag: str) -> None:
+    # A model is several layers; report progress across all of them, not
+    # per layer, or a tiny layer finishing first reads as 100%.
+    layers: dict[str, tuple[int, int]] = {}
+    last = -5
+    for p in client.pull(tag):
+        if p.digest and p.total:
+            layers[p.digest] = (p.total, p.completed or 0)
+            total = sum(t for t, _ in layers.values())
+            pct = int(100 * sum(c for _, c in layers.values()) / total)
+            if pct >= last + 5:
+                last = pct
+                print(f"  pulling {tag}: {pct}%", flush=True)
+
+
+def _same_model(listed: str, tag: str) -> bool:
+    def norm(n: str) -> str:
+        return n if ":" in n else f"{n}:latest"
+
+    return norm(listed) == norm(tag)
+
+
+class _Skip(Exception):
+    pass
+
+
+def measure(client: OllamaClient, http: httpx.Client, tag: str, delete: bool) -> dict:
+    """Measure one model; failures come back as a row with an `error` field."""
+    model = find_model(tag)
+    try:
+        if model is None:
+            raise _Skip(f"{tag} is not in the catalog")
+        _pull(client, tag)
+        payload = {
+            "model": tag,
+            "messages": [{"role": "user", "content": build_prompt()}],
+            "stream": False,
+            "options": {
+                "num_ctx": model.context_tokens,
+                "temperature": 0.2,
+                "presence_penalty": 0,
+            },
+        }
+        if model.thinking:
+            payload["think"] = False
+        print(f"  running {tag}...", flush=True)
+        r = http.post("/api/chat", json=payload, timeout=None)
+        r.raise_for_status()
+        body = r.json()
+        r = http.get("/api/ps")
+        r.raise_for_status()
+        ps = r.json().get("models", [])
+        entry = next(
+            (
+                m
+                for m in ps
+                if _same_model(m.get("name", ""), tag)
+                or _same_model(m.get("model", ""), tag)
+            ),
+            None,
+        )
+        if entry is None:
+            names = [m.get("name") for m in ps]
+            raise _Skip(f"{tag} not in /api/ps after the chat; listed: {names}")
+        row = row_from(tag, entry, body)
+        if delete:
+            http.request(
+                "DELETE", "/api/delete", json={"model": tag}
+            ).raise_for_status()
+        return row
+    except Exception as e:  # noqa: BLE001 - one bad model must not lose the rest
+        return {"tag": tag, "error": str(e) or type(e).__name__}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("tags", nargs="*", help="model tags (default: the tier models)")
+    ap.add_argument("--delete", action="store_true", help="delete each model after")
+    ap.add_argument("--out", default="measure-results.json")
+    args = ap.parse_args()
+
+    tags = args.tags or [m.tag for m in MODEL_CATALOG if m.tier]
+    unknown = [t for t in tags if find_model(t) is None]
+    if unknown:
+        sys.exit(f"Not in the catalog: {', '.join(unknown)}")
+    client = OllamaClient()
+    if client.version() is None:
+        sys.exit("Ollama is not running. Start it (or set OLLAMA_HOST) and retry.")
+    rows: list[dict] = []
+    with httpx.Client(base_url=client.base_url) as http:
+        for tag in tags:
+            print(tag, flush=True)
+            rows.append(measure(client, http, tag, args.delete))
+            Path(args.out).write_text(json.dumps(rows, indent=2))
+    print("\n" + format_table(rows))
+    print(f"\nWrote {args.out}")
+
+
+if __name__ == "__main__":
+    main()
