@@ -97,17 +97,20 @@ def windows_install(exe_path: Path) -> None:
     )
 
 
-def macos_replace_fn(app_path: Path) -> Callable[[Path], None]:
+def macos_replace_fn(
+    app_path: Path, runner: Callable[..., object] = subprocess.run
+) -> Callable[[Path], None]:
     """Swap the Ollama.app at app_path for the one in the downloaded zip."""
 
     def replace(zip_path: Path) -> None:
-        staging = zip_path.parent / "staging"
-        shutil.rmtree(staging, ignore_errors=True)
-        staging.mkdir(parents=True)
+        # Stage next to the app so the final move is a rename on one volume.
+        staging = app_path.parent / ".folio-ollama-staging"
         old = app_path.with_name(app_path.name + ".old")
+        shutil.rmtree(staging, ignore_errors=True)
         moved = False
         try:
-            subprocess.run(
+            staging.mkdir(parents=True)
+            runner(
                 ["ditto", "-x", "-k", str(zip_path), str(staging)],
                 check=True,
                 capture_output=True,
@@ -115,13 +118,17 @@ def macos_replace_fn(app_path: Path) -> Callable[[Path], None]:
             shutil.rmtree(old, ignore_errors=True)
             app_path.rename(old)
             moved = True
-            shutil.move(str(staging / "Ollama.app"), str(app_path))
-            shutil.rmtree(old, ignore_errors=True)
-        except Exception:
+            (staging / "Ollama.app").rename(app_path)
+        except BaseException:
             if moved:
-                shutil.rmtree(app_path, ignore_errors=True)
-                old.rename(app_path)
+                try:
+                    shutil.rmtree(app_path, ignore_errors=True)
+                    old.rename(app_path)
+                except OSError:
+                    pass  # keep the original error; .old is left for recovery
             raise
+        else:
+            shutil.rmtree(old, ignore_errors=True)  # new bundle is in place
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
@@ -138,12 +145,12 @@ def _wait_stopped(client: OllamaClient, seconds: float, poll_s: float = 0.5) -> 
         time.sleep(poll_s)
 
 
-def _quiet(cmd: list[str]) -> None:
+def _quiet(cmd: list[str], runner: Callable[..., object] = subprocess.run) -> None:
     kwargs: dict = {"capture_output": True, "check": False}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     try:
-        subprocess.run(cmd, check=False, **kwargs)
+        runner(cmd, **kwargs)
     except OSError:
         pass
 
@@ -159,6 +166,7 @@ class Installer:
         start_fn: Callable[[], bool] | None = None,
         stop_fn: Callable[[], bool] | None = None,
         replace_fn: Callable[[Path], None] | None = None,
+        run_fn: Callable[..., object] = subprocess.run,
     ):
         self._os = os_name
         self._work_dir = work_dir
@@ -170,6 +178,10 @@ class Installer:
         self._start_fn = start_fn or self._default_start
         self._stop_fn = stop_fn or self._default_stop
         self._replace_fn = replace_fn
+        self._run_fn = run_fn
+        self._quit_wait_s = 15.0
+        self._kill_wait_s = 5.0
+        self._poll_s = 0.5
         self._lock = threading.Lock()
         self._status = InstallStatus("idle", 0.0, None)
         self._thread: threading.Thread | None = None
@@ -182,9 +194,7 @@ class Installer:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return
-            self._status = InstallStatus(
-                "stopping" if update else "downloading", 0.0, None
-            )
+            self._status = InstallStatus("downloading", 0.0, None)
             self._thread = threading.Thread(
                 target=self._run, args=(update,), daemon=True
             )
@@ -207,16 +217,19 @@ class Installer:
         return start_ollama(status, self._client)
 
     def _default_stop(self) -> bool:
+        def wait(seconds: float) -> bool:
+            return _wait_stopped(self._client, seconds, self._poll_s)
+
         if self._os == "macos":
-            _quiet(["osascript", "-e", 'quit app "Ollama"'])
-            if _wait_stopped(self._client, 15):
+            _quiet(["osascript", "-e", 'quit app "Ollama"'], self._run_fn)
+            if wait(self._quit_wait_s):
                 return True
-            _quiet(["pkill", "-x", "ollama"])
-            _quiet(["pkill", "-x", "Ollama"])
-        else:
-            _quiet(["taskkill", "/F", "/IM", "ollama app.exe"])
-            _quiet(["taskkill", "/F", "/IM", "ollama.exe"])
-        return _wait_stopped(self._client, 5 if self._os == "macos" else 15)
+            _quiet(["pkill", "-x", "ollama"], self._run_fn)
+            _quiet(["pkill", "-x", "Ollama"], self._run_fn)
+            return wait(self._kill_wait_s)
+        _quiet(["taskkill", "/F", "/IM", "ollama app.exe"], self._run_fn)
+        _quiet(["taskkill", "/F", "/IM", "ollama.exe"], self._run_fn)
+        return wait(self._quit_wait_s)
 
     def _update_fn(self) -> Callable[[Path], None]:
         if self._replace_fn is not None:
@@ -230,17 +243,18 @@ class Installer:
 
     def _run(self, update: bool = False) -> None:
         installer: Path | None = None
+        stopped = False
         try:
+            replace = self._update_fn() if update else None  # while still running
+            installer = self._download()
             if update:
-                # Resolve the install location while Ollama is still running.
-                replace = self._update_fn()
                 self._set("stopping")
                 if not self._stop_fn():
                     raise InstallError(MSG_STOP)
-            installer = self._download()
+                stopped = True
             self._set("installing")
             try:
-                (replace if update else self._install_fn)(installer)
+                (replace or self._install_fn)(installer)
             except (OSError, subprocess.CalledProcessError) as e:
                 raise InstallError(MSG_INSTALL) from e
             installer.unlink(missing_ok=True)
@@ -249,12 +263,20 @@ class Installer:
                 raise InstallError(MSG_START[self._os])
             self._set("done", 1.0)
         except InstallError as e:
-            self._set("error", message=str(e))
+            self._fail(str(e), stopped)
         except Exception:  # noqa: BLE001
-            self._set("error", message=MSG_INSTALL)
+            self._fail(MSG_INSTALL, stopped)
         finally:
             if installer is not None and self._status.state == "error":
                 installer.unlink(missing_ok=True)
+
+    def _fail(self, message: str, stopped: bool) -> None:
+        if stopped:
+            try:  # best effort: bring the user's Ollama back
+                self._start_fn()
+            except Exception:  # noqa: BLE001, S110
+                pass
+        self._set("error", message=message)
 
     def _download(self) -> Path:
         asset = ASSETS[self._os]
