@@ -4,6 +4,8 @@ from pathlib import Path
 
 import httpx
 
+from folio_engine.ollama.client import PullProgress
+
 _PATH = Path(__file__).parent.parent / "scripts" / "measure_models.py"
 _spec = importlib.util.spec_from_file_location("measure_models", _PATH)
 measure = importlib.util.module_from_spec(_spec)
@@ -134,3 +136,26 @@ def test_ps_miss_lists_names(monkeypatch):
     with _http(handler) as http:
         row = measure.measure(_fake_client(monkeypatch), http, a.tag, False)
     assert "other:1" in row["error"]
+
+
+class _PullOnly:
+    def __init__(self, events):
+        self._events = events
+
+    def pull(self, tag):
+        yield from self._events
+
+
+def test_pull_progress_adds_up_all_layers(capsys):
+    events = [
+        PullProgress("pulling big", "big", 1000, 0),
+        PullProgress("pulling tiny", "tiny", 10, 10),  # a tiny layer finishes first
+        PullProgress("pulling big", "big", 1000, 500),
+        PullProgress("pulling big", "big", 1000, 1000),
+    ]
+    measure._pull(_PullOnly(events), "m")
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == "  pulling m: 0%"
+    assert "  pulling m: 50%" in lines
+    assert lines[-1] == "  pulling m: 100%"
+    assert lines.count("  pulling m: 100%") == 1

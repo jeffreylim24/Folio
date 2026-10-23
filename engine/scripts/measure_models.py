@@ -74,10 +74,15 @@ def format_table(rows: list[dict]) -> str:
 
 
 def _pull(client: OllamaClient, tag: str) -> None:
+    # A model is several layers; report progress across all of them, not
+    # per layer, or a tiny layer finishing first reads as 100%.
+    layers: dict[str, tuple[int, int]] = {}
     last = -5
     for p in client.pull(tag):
-        if p.total and p.completed is not None:
-            pct = int(100 * p.completed / p.total)
+        if p.digest and p.total:
+            layers[p.digest] = (p.total, p.completed or 0)
+            total = sum(t for t, _ in layers.values())
+            pct = int(100 * sum(c for _, c in layers.values()) / total)
             if pct >= last + 5:
                 last = pct
                 print(f"  pulling {tag}: {pct}%", flush=True)
