@@ -33,7 +33,12 @@ def watch_parent(
     """Call exit_fn once the parent process is gone."""
     checks = 0
     while max_checks is None or checks < max_checks:
-        if not exists(pid):
+        try:
+            alive = exists(pid)
+        except Exception as e:  # never die silently; assume the parent lives
+            print(f"parent watchdog check failed: {e!r}", file=sys.stderr, flush=True)
+            alive = True
+        if not alive:
             exit_fn()
             return
         checks += 1

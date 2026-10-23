@@ -49,3 +49,37 @@ def test_main_accepts_parent_pid():
 
     args = build_parser().parse_args(["--data-dir", "x", "--parent-pid", "42"])
     assert args.parent_pid == 42
+
+
+def test_watch_parent_survives_exists_error():
+    from folio_engine.__main__ import watch_parent
+
+    seq = iter([RuntimeError("boom"), False])
+
+    def exists(pid):
+        v = next(seq)
+        if isinstance(v, Exception):
+            raise v
+        return v
+
+    calls = []
+    watch_parent(1234, exists=exists, exit_fn=lambda: calls.append(1), interval_s=0)
+    assert calls == [1]
+
+
+def test_engine_exits_when_parent_pid_is_dead(tmp_path):
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    proc = subprocess.Popen(
+        [
+            sys.executable, "-m", "folio_engine",
+            "--data-dir", str(tmp_path), "--parent-pid", str(dead.pid),
+        ],
+        stdout=subprocess.PIPE,
+        env={**os.environ, "FOLIO_ENGINE_TOKEN": "tok"},
+    )
+    try:
+        assert proc.wait(timeout=10) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
